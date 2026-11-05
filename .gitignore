@@ -1,2 +1,7 @@
 /.idea/
 .DS_Store
+
+/.cursor/.endpoint-risk-state.json
+/.cursor/.ld-flag-cache.json
+/.cursor/.workspace-profile.json
+/.cursor/.workspace-profile.log
