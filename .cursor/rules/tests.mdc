@@ -1,0 +1,68 @@
+---
+description: Test conventions for everything under tests/
+globs: tests/**/*.py
+alwaysApply: false
+---
+
+# Test conventions
+
+## Layout
+
+- `tests/unit/` mirrors the package: `src/<package>/rules.py` is tested by
+  `tests/unit/test_rules.py`, and a sub-package gets a sub-folder.
+- The other folders hold the other kinds of test: `integration/`, `golden/`, `architecture/` and
+  `e2e/`, plus any the project adds.
+- Every test folder is a package with an empty `__init__.py`. Shared fixtures go in `conftest.py`,
+  and tests never import each other.
+
+## Each test
+
+- One behaviour per test, named for it: `test_rejects_a_record_with_a_negative_amount`.
+- Arrange, act and assert, as three blocks separated by blank lines, with one act per test.
+- `pytest.mark.parametrize` with `ids=` for a table of cases.
+- Assert on behaviour through the public functions, never on private helpers. Use
+  `pytest.raises(SpecificError, match=...)` for the exceptional cases.
+- Annotate tests like product code (`-> None`, typed fixtures), because mypy checks them too.
+- Tests don't depend on running order or on each other's data: each one arranges what it needs.
+- End-to-end tests launch the command line as `[sys.executable, "-m", "<package>", ...]`, never a
+  bare `python`, so they use the same interpreter on every operating system.
+
+## Test doubles
+
+- Fakes rather than mocks: small hand-written classes that satisfy the `Protocol`. Never
+  `mock.patch` the code under test.
+- A fixed clock and an explicit as-of time, never the wall clock. Seeded randomness only, and no
+  sleeps.
+- No network, ever. A model or service is a fake or a recorded reply.
+- Files go in `tmp_path`. Unit tests use in-memory SQLite; integration tests use a real file under
+  `tmp_path`, including anything about transactions or concurrency.
+
+## The oracle and expected failures
+
+- Never create, edit or delete anything under `tests/golden/expected/`. If the golden test
+  disagrees with the code, report which cases differ and why, and change neither to fit.
+- Never edit recorded replies from other systems, such as those under `tests/ai/recorded/`.
+  Hand-written replies for tests live in the test module or a fixtures folder.
+- Planned, not-yet-built behaviour is marked `@pytest.mark.xfail(strict=True, raises=...)`, naming
+  the exception the stub raises, and the marker comes off when the behaviour lands. Never use
+  `skip` or `xfail` to hide a failure.
+
+## Quality
+
+- Coverage is a floor, not a target. Don't write tests just to raise it.
+- A test must fail when its behaviour breaks. If in doubt, break the code on purpose, watch the
+  test fail, then put the code back.
+- If Hypothesis is used, register a profile in `conftest.py` with `derandomize=True` and
+  `deadline=None`, so runs repeat exactly in CI.
+
+## Example
+
+```python
+def test_rejects_a_record_with_a_negative_amount() -> None:
+    line = '{"id": "r1", "amount_cents": -5}'
+
+    result = parse_line(line)
+
+    assert isinstance(result, Rejected)
+    assert result.reason is Reason.NEGATIVE_AMOUNT
+```

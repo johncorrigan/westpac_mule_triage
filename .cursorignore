@@ -1,0 +1,4 @@
+# Keeps secrets out of Cursor's indexing and AI features: a second layer behind the hooks.
+.env
+.env.*
+!.env.example

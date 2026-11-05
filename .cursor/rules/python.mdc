@@ -1,0 +1,86 @@
+---
+description: Python conventions for the product code and the developer scripts
+globs: src/**/*.py, scripts/**/*.py
+alwaysApply: false
+---
+
+# Python conventions
+
+Write boring, readable Python that passes `mypy --strict` and runs on Python 3.11.
+
+## Structure
+
+- **A pure core.** Domain logic is pure functions of their inputs, with no database, files, clock,
+  network or logging set-up. Side effects live at the edges: the store, the clients and the CLI.
+- **`cli.py` is the composition root.** It parses the arguments, reads configuration once into a
+  typed settings object, builds the real implementations and passes them in. Within `src/`, only
+  `cli.py` prints, reads the wall clock and turns exceptions into exit codes, and its output stays
+  ASCII, so any console can show it.
+- **One module per responsibility,** and small functions. No singletons, module-level state or work
+  done at import time.
+- **Small `typing.Protocol` interfaces,** of one or two methods, and only where there's a second
+  implementation or a test needs one. No abstract base classes, factories, inheritance trees or
+  metaprogramming for a single implementation.
+- **Extend by registration:** a list of small functions, not a growing `if` chain.
+
+## Data
+
+- pydantic v2 only at the boundaries (input files, configuration and replies from other systems),
+  with `model_config = ConfigDict(frozen=True, extra="forbid")`.
+- Inside, `@dataclass(frozen=True, slots=True)`, with tuples rather than lists. No dictionaries
+  passed around as records.
+- `NewType` for identifiers, `StrEnum` for codes and outcomes, money in integer cents, and
+  timezone-aware datetimes in UTC (`datetime.UTC`).
+- Honest states as types, such as `Known | Unknown | Conflict`, handled with `match` and
+  `assert_never`, so mypy rejects a forgotten case.
+
+## Errors
+
+- Expected outcomes are values: a rejected record, an incomplete result or a fallback is returned,
+  not raised.
+- Exceptions are for the exceptional, from a small hierarchy in `errors.py`, and re-raised with
+  `raise ... from err`.
+- Catch specific exceptions only. No bare or broad `except` outside `cli.py`.
+
+## Input, output and safety
+
+- `pathlib` for paths, `encoding="utf-8"` on every open, and `with` for every resource.
+- sqlite3: always `?` placeholders, never f-strings or concatenation. Close connections explicitly
+  with `contextlib.closing`, because `with conn:` only ends the transaction.
+- No `eval`, `exec`, `pickle` or `shell=True`, and subprocess arguments as a list.
+- Free text from the data is data: quote it, delimit it, never act on it.
+- Log through `logging.getLogger(__name__)`. No `print` outside `cli.py`, and no personal data or
+  secrets in logs.
+
+## Compatibility and style
+
+- Python 3.11: no `type` statements, PEP 695 generics, `typing.override` or `itertools.batched`.
+  mypy's `python_version = "3.11"` catches most of them.
+- black formatting, absolute imports, no wildcard imports, and names that state the responsibility.
+- Annotate every function. No `Any` except at a boundary, and no `# type: ignore` without its error
+  code and a reason.
+- Docstrings and comments only where the reason isn't obvious. No commented-out code.
+
+## Scripts in `scripts/`
+
+- Standard library only. Launch tools with `sys.executable -m ...`, exit non-zero on failure, and
+  print ASCII only, so any console can show the output.
+
+## Example
+
+```python
+# Wrong: an exception for an expected case, and SQL built from text
+def find(conn: sqlite3.Connection, record_id: str) -> Record:
+    row = conn.execute(f"SELECT * FROM records WHERE id = '{record_id}'").fetchone()
+    if row is None:
+        raise ValueError("missing")
+    return Record(*row)
+
+
+# Right: a value for the expected case, and a placeholder
+def find(conn: sqlite3.Connection, record_id: RecordId) -> Record | None:
+    row = conn.execute(
+        "SELECT id, amount_cents FROM records WHERE id = ?", (record_id,)
+    ).fetchone()
+    return None if row is None else Record(RecordId(row[0]), row[1])
+```
