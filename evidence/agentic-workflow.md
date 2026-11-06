@@ -39,3 +39,7 @@ then switched the plan from milestone list r11 to r12, and retired CI.
 | R8 | Nothing enforced "standard library only" for `scripts/` | Fix | New test; failed first |
 
 The reasons for each decision are mine to add.
+
+### M2 (by me)
+
+At M2, I had a separate planning chat (Claude Opus 5.5, not the builder agent) draft the golden README and answer key from rules I agreed. I checked every case and committed both by hand.

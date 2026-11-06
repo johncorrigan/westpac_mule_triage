@@ -1,0 +1,39 @@
+# The answer key for the golden scenario. Its cases and rules are in ../README.md.
+default_outcome = "NO_ALERT"
+
+[ingest]
+received = 35
+accepted = 33
+rejected = 1
+duplicates = 1
+rejected_ids = ["TX-102-05"]
+duplicate_ids = ["TX-102-06"]
+
+[accounts.ACC-101]
+outcome = "ALERT"
+reasons = ["FAN_IN", "PASS_THROUGH", "NEW_ACCOUNT"]
+
+[accounts.ACC-102]
+outcome = "NO_ALERT"
+reasons = ["NEW_ACCOUNT"]
+
+[accounts.ACC-103]
+outcome = "NO_ALERT"
+reasons = ["PASS_THROUGH"]
+
+[accounts.ACC-104]
+outcome = "NO_ALERT"
+reasons = ["FAN_IN"]
+
+[accounts.ACC-105]
+outcome = "NEEDS_REVIEW"
+reasons = ["PASS_THROUGH", "PROFILE_MISSING"]
+
+[accounts.ACC-106]
+outcome = "ALERT"
+reasons = ["FAN_IN", "PASS_THROUGH", "PROFILE_MISSING"]
+incomplete = true
+
+[accounts.ACC-107]
+outcome = "NO_ALERT"
+reasons = []
