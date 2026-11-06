@@ -25,6 +25,9 @@ script can check.
   dropped silently.
 - One milestone at a time, within its budget. If it's going to overrun, stop and tell me. Don't
   rush, skip a test or weaken a check to fit.
+- **A milestone usually starts in a new chat,** so earlier chats aren't available. Before you
+  start, read `PLAN.md` and, if it exists, `evidence/intent.md`, and run `git status`. The
+  repository is the memory, not the chat.
 
 ## Every milestone
 
@@ -89,7 +92,7 @@ script can check.
 
 - The install is the only build. It's editable, so code changes need no reinstall; run it again
   only after `pyproject.toml` changes.
-- `python scripts/verify.py` is the definition of done, and CI runs the same gates. `--fast` runs
+- `python scripts/verify.py` is the definition of done. `--fast` runs
   only the quick ones: the format check, lint, the golden checksum and the secrets check.
 - One test file: `python -m pytest tests/unit/test_rules.py -q`.
 - `.gitattributes` keeps line endings LF on every machine, so file checksums match everywhere.
