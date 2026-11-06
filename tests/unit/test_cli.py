@@ -76,6 +76,8 @@ def test_the_exit_codes_keep_their_documented_values() -> None:
         "USAGE_ERROR": 2,
         "RECONCILIATION_FAILED": 3,
         "DEGRADED": 4,
+        "STALE_VERSION": 5,
+        "DATABASE_UNAVAILABLE": 6,
     }
 
 

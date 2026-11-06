@@ -18,10 +18,11 @@ flowchart TD
     L2 --> L1["1: contracts, errors, clock"]
 ```
 
-So far `cli.py`, `contracts.py`, `errors.py`, `ingest.py`, `store.py` and `pipeline.py` exist,
-and `cli.py` only parses arguments.
-It's the composition root: as modules arrive, it builds the real implementations and passes them
-in, and it's the only module that may print, read the wall clock or catch broadly.
+At M5b every module but `narrative.py` (M6) and `generate.py` (G) exists. The core is pure:
+`signals`, `rules` and `evidence` compute from records they're given. The edges are the store,
+the audit log, the report files and the command line. `cli.py` is the composition root: it builds
+the real implementations, including the wall clock, and passes them in, and it's the only module
+that may print, read the wall clock or catch broadly.
 
 ## Contracts
 
@@ -75,6 +76,55 @@ commit. In Markdown every ID and reference is inline code, and the pack uses lis
 would split a table cell. The store's schema now has a version, and an older database is refused
 with a message rather than failing on a missing column.
 
+## Audit and dispositions
+
+Written at M5b. `audit.py` keeps one table, `audit_events`, for every audited event: its type,
+the case (account and as-of time), the time from the injected clock, and a JSON payload. Triggers
+refuse UPDATE and DELETE, and an INSERT that reuses an event ID, because INSERT OR REPLACE would
+otherwise remove the old row without firing the delete trigger (`tests/integration/test_audit.py`,
+on a real file). A run audits each case it opens, changes or reopens, with its run ID, in the
+run's transaction, so a failed run leaves no event behind. `review.dispose` takes the version the
+reviewer saw and makes one `UPDATE ... WHERE version = ?`, with its audit event, inside `BEGIN
+IMMEDIATE`. It closes the case and raises its version, so of two reviewers on one version only the
+first wins, and the second gets a `Stale` result telling them to re-read the case (exit code 5).
+A later run that changes a closed case reopens it, and the disposition stays in the audit table.
+`show` rebuilds the pack from the stored records and warns if it differs from the stored case.
+Not covered: anyone who can write to the file can drop the triggers. They stop the tool and
+ordinary SQL from rewriting history, but they don't make the file tamper-proof.
+
+## Data flow
+
+1. `run` reads payments and profiles as JSON Lines, and `ingest` validates each line.
+2. In one transaction, the store keeps new records and records rejections and duplicates, and
+   reconciliation checks that every line is accounted for.
+3. From every stored record known by the as-of time, `evidence` builds each account's pack, with
+   its outcome from `signals` and `rules`.
+4. The store saves each case's outcome and facts hash, and each change is audited. Then the
+   transaction commits.
+5. `report` writes each case's pack under `--out`. A reviewer reads one with `show` and records
+   a decision with `dispose`.
+
+## Privacy
+
+- Data is synthetic, and accounts and reviewers are pseudonymous IDs; the contracts refuse a
+  name field.
+- Minimisation: a pack holds only the payments in the signal window and the account's own
+  profile, and only the facts behind the signals. References are kept in full (see the evidence
+  pack, above).
+- No personal data in logs: the tool doesn't log yet (M7). The run's console summary is account
+  IDs, codes and counts, and the audit payloads hold IDs, codes and hashes only. `show` prints a
+  whole pack, references included, so like the pack files its output can hold personal data.
+
+## Likely production shape
+
+Not built, and not tested. Ingestion would stream payments into Parquet on object storage,
+partitioned by day, with the rules reading a snapshot by knowledge time. Cases would go to the
+bank's case management system through a transactional outbox, written in the same transaction as
+the case change, so a case and its message can't disagree. The tool would run in containers on a
+managed cloud platform, with secrets in a vault and least-privilege access for each service.
+The narrative model would run on a private endpoint in the same region, validated and monitored
+under the bank's model risk process.
+
 ## The four boundaries
 
 | Boundary | What happens there | Who owns it |
@@ -84,7 +134,7 @@ with a message rather than failing on a missing column.
 | Decision | the investigator's disposition, recorded in an audit table that refuses updates and deletes | the investigator: `review` and `audit`, layer 5 |
 | Action | freezing, reporting or contacting an account | people and systems outside the tool, which does nothing here |
 
-Only the contracts exist so far: layers 3 to 5 are planned for M4 to M6.
+At M5b every boundary but the narrative (M6) is built.
 
 ## Code rules the architecture tests enforce
 

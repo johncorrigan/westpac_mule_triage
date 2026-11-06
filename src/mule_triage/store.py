@@ -35,12 +35,12 @@ BUSY_TIMEOUT_SECONDS = 5.0
 CHANGED_SINCE_STORED = "changed_since_stored"
 FIRST_CASE_VERSION = 1
 # Raised with every schema change; SCHEMA sets it, as PRAGMA takes no placeholders.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SELECT_SCHEMA_VERSION = "PRAGMA user_version"
 COUNT_TABLES = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'"
 
 SCHEMA = """
-PRAGMA user_version = 1;
+PRAGMA user_version = 2;
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY,
     as_of TEXT NOT NULL,
@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS cases (
     reasons TEXT NOT NULL,
     facts_sha256 TEXT NOT NULL,
     version INTEGER NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('OPEN', 'CLOSED')),
     changed_in_run INTEGER NOT NULL REFERENCES runs (run_id),
     PRIMARY KEY (account_id, as_of),
     CHECK ((outcome = 'ALERT') = (priority IS NOT NULL)),
@@ -125,20 +126,29 @@ SELECT_PROFILES = (
 SELECT_AS_OF = "SELECT as_of FROM runs WHERE run_id = ?"
 SET_RULES = "UPDATE runs SET rules_version = ?, rules_sha256 = ? WHERE run_id = ?"
 SELECT_CASES = (
-    "SELECT account_id, outcome, priority, incomplete, reasons, facts_sha256 FROM cases"
-    " WHERE as_of = ?"
+    "SELECT account_id, outcome, priority, incomplete, reasons, facts_sha256, version,"
+    " status FROM cases WHERE as_of = ?"
 )
 SELECT_CASE_VERSIONS = (
     "SELECT account_id, version FROM cases WHERE as_of = ? ORDER BY account_id"
 )
+SELECT_CASE = (
+    "SELECT outcome, priority, incomplete, reasons, facts_sha256, version, status,"
+    " changed_in_run FROM cases WHERE account_id = ? AND as_of = ?"
+)
 INSERT_CASE = (
     "INSERT INTO cases (outcome, priority, incomplete, reasons, facts_sha256,"
-    " changed_in_run, account_id, as_of, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    " changed_in_run, account_id, as_of, version, status)"
+    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN')"
 )
 UPDATE_CASE = (
     "UPDATE cases SET outcome = ?, priority = ?, incomplete = ?, reasons = ?,"
-    " facts_sha256 = ?, changed_in_run = ?, version = version + 1"
+    " facts_sha256 = ?, changed_in_run = ?, version = version + 1, status = 'OPEN'"
     " WHERE account_id = ? AND as_of = ?"
+)
+CLOSE_CASE = (
+    "UPDATE cases SET status = 'CLOSED', version = version + 1"
+    " WHERE account_id = ? AND as_of = ? AND version = ?"
 )
 
 
@@ -209,6 +219,39 @@ class CaseSnapshot:
 class CaseVersion:
     account_id: AccountId
     version: int
+
+
+class CaseStatus(StrEnum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+
+
+class ChangeKind(StrEnum):
+    OPENED = "OPENED"
+    CHANGED = "CHANGED"
+    REOPENED = "REOPENED"
+
+
+@dataclass(frozen=True, slots=True)
+class CaseChange:
+    """A case a run opened or changed; a change to a closed case reopens it."""
+
+    kind: ChangeKind
+    snapshot: CaseSnapshot
+    version: int
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCase:
+    account_id: AccountId
+    outcome: str
+    priority: str | None
+    incomplete: bool
+    reasons: tuple[str, ...]
+    facts_sha256: str
+    version: int
+    status: CaseStatus
+    changed_in_run: RunId
 
 
 def utc_text(moment: datetime) -> str:
@@ -366,7 +409,7 @@ class SqliteStore:
         run_id: RunId,
         rules: RulesConfig,
         snapshots: tuple[CaseSnapshot, ...],
-    ) -> None:
+    ) -> tuple[CaseChange, ...]:
         """Cases are keyed by account and as-of time. A snapshot that matches its case
         leaves it alone, and only an ALERT or NEEDS_REVIEW opens one."""
         found = self._connection.execute(SELECT_AS_OF, (run_id,)).fetchone()
@@ -377,9 +420,10 @@ class SqliteStore:
             SET_RULES, (rules.version, settings_sha256(rules), run_id)
         )
         stored = {
-            row[0]: tuple(row[1:])
+            row[0]: (tuple(row[1:6]), row[6], CaseStatus(row[7]))
             for row in self._connection.execute(SELECT_CASES, (as_of,))
         }
+        changes: list[CaseChange] = []
         for snapshot in snapshots:
             values = case_values(snapshot)
             account_id = snapshot.result.account_id
@@ -389,8 +433,47 @@ class SqliteStore:
                 self._connection.execute(
                     INSERT_CASE, (*values, *key, FIRST_CASE_VERSION)
                 )
-            elif previous is not None and previous != values:
+                changes.append(
+                    CaseChange(ChangeKind.OPENED, snapshot, FIRST_CASE_VERSION)
+                )
+            elif previous is not None and previous[0] != values:
                 self._connection.execute(UPDATE_CASE, (*values, *key))
+                closed = previous[2] is CaseStatus.CLOSED
+                kind = ChangeKind.REOPENED if closed else ChangeKind.CHANGED
+                changes.append(CaseChange(kind, snapshot, previous[1] + 1))
+        return tuple(changes)
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """For the audit log, so its events share the store's transactions."""
+        return self._connection
+
+    def close_case(
+        self, account_id: AccountId, as_of: datetime, seen_version: int
+    ) -> bool:
+        """One UPDATE that succeeds only on the version the reviewer saw."""
+        cursor = self._connection.execute(
+            CLOSE_CASE, (account_id, utc_text(as_of), seen_version)
+        )
+        return cursor.rowcount == 1
+
+    def case(self, account_id: AccountId, as_of: datetime) -> StoredCase | None:
+        row = self._connection.execute(
+            SELECT_CASE, (account_id, utc_text(as_of))
+        ).fetchone()
+        if row is None:
+            return None
+        return StoredCase(
+            account_id,
+            outcome=row[0],
+            priority=row[1],
+            incomplete=bool(row[2]),
+            reasons=tuple(json.loads(row[3])),
+            facts_sha256=row[4],
+            version=row[5],
+            status=CaseStatus(row[6]),
+            changed_in_run=RunId(row[7]),
+        )
 
     def case_versions(self, as_of: datetime) -> tuple[CaseVersion, ...]:
         rows = self._connection.execute(SELECT_CASE_VERSIONS, (utc_text(as_of),))

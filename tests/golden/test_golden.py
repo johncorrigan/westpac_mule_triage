@@ -9,6 +9,7 @@ from typing import Self
 from pydantic import BaseModel, ConfigDict, model_validator
 
 from mule_triage.cli import load_rules
+from mule_triage.clock import FixedClock
 from mule_triage.contracts import (
     AccountId,
     AccountResult,
@@ -77,6 +78,7 @@ def run_golden(tmp_path: Path) -> RunResult:
             database=tmp_path / "golden.db",
             rules=load_rules(RULES),
             out=tmp_path / "out",
+            clock=FixedClock(datetime(2026, 11, 8, 3, 0, tzinfo=UTC)),
         ),
     )
 

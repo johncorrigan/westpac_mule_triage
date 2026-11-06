@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from mule_triage.clock import FixedClock
 from mule_triage.contracts import (
     AccountProfile,
     AccountResult,
@@ -20,6 +21,7 @@ from mule_triage.errors import ReconciliationError
 from mule_triage.ingest import ParsedFile
 from mule_triage.pipeline import Settings, record_run, run
 from mule_triage.store import (
+    CaseChange,
     CaseSnapshot,
     CaseVersion,
     RunId,
@@ -30,6 +32,7 @@ from mule_triage.store import (
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 AS_OF_TEXT = "2026-11-03T00:00:00.000000+00:00"
+CLOCK = FixedClock(datetime(2026, 11, 8, 3, 0, tzinfo=UTC))
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
 NEW_PT = '["NEW_ACCOUNT", "PASS_THROUGH"]'
 PT_MISSING = '["PASS_THROUGH", "PROFILE_MISSING"]'
@@ -116,13 +119,18 @@ class FaultyStore:
         run_id: RunId,
         rules: RulesConfig,
         snapshots: tuple[CaseSnapshot, ...],
-    ) -> None:
-        self.real.save_outcomes(run_id, rules, snapshots)
+    ) -> tuple[CaseChange, ...]:
+        changes = self.real.save_outcomes(run_id, rules, snapshots)
         if self.fail_after_outcomes:
             raise sqlite3.OperationalError("disk I/O error")
+        return changes
 
     def case_versions(self, as_of: datetime) -> tuple[CaseVersion, ...]:
         return self.real.case_versions(as_of)
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        return self.real.connection
 
 
 def write_inputs(folder: Path, first_transaction: str) -> tuple[Path, Path]:
@@ -155,7 +163,7 @@ def run_golden(
         payments,
         GOLDEN / "profiles.jsonl",
         as_of,
-        Settings(database, rules, database.parent / "out"),
+        Settings(database, rules, database.parent / "out", CLOCK),
     ).accounts
 
 
@@ -200,7 +208,7 @@ def test_a_run_that_fails_leaves_the_database_unchanged(
             run(
                 *inputs,
                 AS_OF,
-                Settings(stored_once, rules, tmp_path / "out"),
+                Settings(stored_once, rules, tmp_path / "out", CLOCK),
                 FaultyStore(real, **fault),
             )
 

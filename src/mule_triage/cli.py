@@ -1,4 +1,6 @@
 import argparse
+import re
+import sqlite3
 import sys
 import tomllib
 from collections import Counter
@@ -7,14 +9,35 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from enum import IntEnum
 from pathlib import Path
+from typing import assert_never
 
 from pydantic import ValidationError
 
 from mule_triage import pipeline
-from mule_triage.contracts import Alert, NoAlert, Outcome, RulesConfig, RunResult
+from mule_triage.clock import Clock
+from mule_triage.contracts import (
+    ACCOUNT_ID_PATTERN,
+    Alert,
+    NoAlert,
+    Outcome,
+    RulesConfig,
+    RunResult,
+)
 from mule_triage.errors import ReconciliationError, RulesError, StoreError
 from mule_triage.pipeline import Settings
+from mule_triage.report import case_markdown
+from mule_triage.review import (
+    CaseNotFound,
+    Disposed,
+    Disposition,
+    DispositionReason,
+    NarrativeUse,
+    Stale,
+    case_view,
+    dispose,
+)
 from mule_triage.rules import unreachable_settings
+from mule_triage.store import open_store
 
 DEFAULT_RULES = Path("rules/rules-v1.toml")
 DEFAULT_DATABASE = Path("out/mule_triage.db")
@@ -29,6 +52,29 @@ class ExitCode(IntEnum):
     USAGE_ERROR = 2
     RECONCILIATION_FAILED = 3
     DEGRADED = 4
+    STALE_VERSION = 5
+    DATABASE_UNAVAILABLE = 6
+
+
+class WallClock:
+    def now(self) -> datetime:
+        return datetime.now(UTC)
+
+
+def plain_id(text: str) -> str:
+    if re.fullmatch(ACCOUNT_ID_PATTERN, text) is None:
+        raise argparse.ArgumentTypeError(
+            f"must be up to 64 letters, digits or _ . : -: {text!r}"
+        )
+    return text
+
+
+def case_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("account", type=plain_id, help="the case's account ID")
+    parser.add_argument(
+        "--as-of", required=True, type=aware_time, help="the case's as-of time"
+    )
+    parser.add_argument("--db", type=Path, default=DEFAULT_DATABASE)
 
 
 def aware_time(text: str) -> datetime:
@@ -65,6 +111,32 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--rules", type=Path, default=DEFAULT_RULES)
     run.add_argument("--db", type=Path, default=DEFAULT_DATABASE)
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    show = commands.add_parser(
+        "show", help="show one case, its version, its evidence and its history"
+    )
+    case_arguments(show)
+    show.add_argument("--rules", type=Path, default=DEFAULT_RULES)
+    disposal = commands.add_parser(
+        "dispose", help="record a reviewer's disposition of one case"
+    )
+    case_arguments(disposal)
+    disposal.add_argument(
+        "--version",
+        required=True,
+        type=int,
+        help="the case version the reviewer saw, as `show` gives it",
+    )
+    disposal.add_argument(
+        "--reason", required=True, type=DispositionReason, choices=DispositionReason
+    )
+    disposal.add_argument("--reviewer", required=True, type=plain_id)
+    disposal.add_argument(
+        "--narrative",
+        required=True,
+        type=NarrativeUse,
+        choices=NarrativeUse,
+        help="whether the reviewer accepted, edited or discarded the narrative",
+    )
     return parser
 
 
@@ -112,20 +184,86 @@ def summary(result: RunResult) -> str:
     return "\n".join(lines)
 
 
-def main(argv: Sequence[str] | None = None, run: Runner = pipeline.run) -> int:
+def dispose_command(args: argparse.Namespace, clock: Clock) -> int:
+    disposition = Disposition(
+        account_id=args.account,
+        as_of=args.as_of,
+        seen_version=args.version,
+        reason=args.reason,
+        reviewer=args.reviewer,
+        narrative=args.narrative,
+    )
+    with open_store(args.db) as store:
+        result = dispose(store, disposition, clock)
+    case = f"{args.account} at {args.as_of.isoformat()}"
+    match result:
+        case Disposed(version=version):
+            print(f"{case}: {args.reason}, and closed at version {version}")
+            return ExitCode.SUCCESS
+        case Stale():
+            print(f"mule_triage: {case}: {result.message}", file=sys.stderr)
+            return ExitCode.STALE_VERSION
+        case CaseNotFound():
+            print(f"mule_triage: {case}: no such case", file=sys.stderr)
+            return ExitCode.USAGE_ERROR
+        case _:
+            assert_never(result)
+
+
+def show_command(args: argparse.Namespace, rules: RulesConfig) -> int:
+    with open_store(args.db) as store:
+        view = case_view(store, args.account, args.as_of, rules)
+    if view is None:
+        case = f"{args.account} at {args.as_of.isoformat()}"
+        print(f"mule_triage: {case}: no such case", file=sys.stderr)
+        return ExitCode.USAGE_ERROR
+    print(case_markdown(view), end="")
+    return ExitCode.SUCCESS
+
+
+def main(
+    argv: Sequence[str] | None = None,
+    run: Runner = pipeline.run,
+    clock: Clock | None = None,
+) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command is None:
         parser.print_help()
         return ExitCode.SUCCESS
+    now = WallClock() if clock is None else clock
     try:
+        return dispatch(args, run, now)
+    except sqlite3.DatabaseError as error:
+        print(
+            f"mule_triage: {args.db}: {error}; nothing was changed, so try again once"
+            " the database is free, or use another --db",
+            file=sys.stderr,
+        )
+        return ExitCode.DATABASE_UNAVAILABLE
+
+
+def dispatch(args: argparse.Namespace, run: Runner, now: Clock) -> int:
+    """A locked or unreadable database raises sqlite3.DatabaseError, which `main` reports;
+    each command's transaction has rolled back by then."""
+    if args.command in ("dispose", "show") and not args.db.is_file():
+        print(f"mule_triage: {args.db}: no database there", file=sys.stderr)
+        return ExitCode.USAGE_ERROR
+    try:
+        if args.command == "dispose":
+            return dispose_command(args, now)
         rules = load_rules(args.rules)
+        if args.command == "show":
+            return show_command(args, rules)
     except RulesError as error:
+        print(f"mule_triage: {error}", file=sys.stderr)
+        return ExitCode.USAGE_ERROR
+    except StoreError as error:
         print(f"mule_triage: {error}", file=sys.stderr)
         return ExitCode.USAGE_ERROR
     try:
         args.db.parent.mkdir(parents=True, exist_ok=True)
-        settings = Settings(args.db, rules, args.out)
+        settings = Settings(args.db, rules, args.out, now)
         result = run(args.payments, args.profiles, args.as_of, settings)
     except ReconciliationError as error:
         print(f"mule_triage: nothing was stored: {error}", file=sys.stderr)

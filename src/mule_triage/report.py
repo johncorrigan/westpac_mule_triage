@@ -22,12 +22,14 @@ from mule_triage.evidence import (
     facts_sha256,
     utc_iso,
 )
+from mule_triage.review import CaseView
 
 
 def inline_code(text: str) -> str:
-    """One code span, whatever backticks or control characters the text holds."""
+    """One code span of ASCII, whatever backticks or control characters the text holds."""
     escaped = "".join(
-        char if char.isprintable() else json.dumps(char)[1:-1] for char in text
+        char if char.isprintable() and char.isascii() else json.dumps(char)[1:-1]
+        for char in text
     )
     longest = run = 0
     for char in escaped:
@@ -110,6 +112,23 @@ def pack_markdown(pack: EvidencePack, version: int) -> str:
         f"- {inline_code(c.account_id)}: ${dollars(c.total_cents)} in total, from"
         f" {', '.join(inline_code(fact_id) for fact_id in c.fact_ids)}"
         for c in pack.counterparties.shown
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def case_markdown(view: CaseView) -> str:
+    """The stored case, its pack rebuilt from the stored records, and its audit history."""
+    case = view.case
+    lines = [f"Case status: {case.status}, version {case.version}"]
+    if not view.matches_case:
+        lines.append(
+            "Warning: with these rules the pack below differs from the stored case;"
+            " use the run's rules file before disposing."
+        )
+    lines += ["", pack_markdown(view.pack, case.version), "## Audit history", ""]
+    lines += [
+        f"- {utc_iso(event.occurred_at)} {event.event_type}: {inline_code(event.payload)}"
+        for event in view.history
     ]
     return "\n".join(lines) + "\n"
 

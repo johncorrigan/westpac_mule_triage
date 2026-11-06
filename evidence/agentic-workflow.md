@@ -106,6 +106,28 @@ The reasons for each decision are mine to add.
 | R9 | No test ties the hash stored on the case to the pack file's `facts_sha256` | Open | None |
 | R10 | Untested: a payment to itself, and an empty ID, which renders as literal backticks | Open | None |
 
+### M5b self-review (by the building agent)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | `show` rebuilt the pack with the rules it was given, and warned only if the facts differed, so a different `alert_at` showed another outcome than the stored case with no warning | Fix | The view must match the stored outcome, priority, INCOMPLETE flag, reasons and facts hash; the test failed first |
+| R2 | A closed case can be disposed of again at its current version, which records a second disposition and raises the version | Open: mine to decide | None |
+| R3 | Anyone who can write to the database file can drop the triggers | Open | Noted in `design.md` |
+| R4 | Two reviewers are tested one after the other, not concurrently (that's T) | Open | None |
+
+### M5b review (by the building agent, at my request)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | `design.md` said the console output is only IDs, codes and counts, but `show` prints whole packs, references included | Fix | Reworded |
+| R2 | No test checked that a change to an open case is audited as `CASE_CHANGED`, so labelling every change as reopened would pass | Fix | New test; it failed when the label was broken on purpose |
+| R3 | A locked or unreadable database crashed every command with a traceback and exit code 1 | Fix | A one-line message saying nothing was changed, and exit code 6; three cases failed first |
+| R4 | A disposition's audit record didn't name the facts it was made on | Fix | Its payload holds the case's facts hash; the test failed first |
+| R5 | `--version` accepts 0 or a negative number | Open | None |
+| R6 | Pack files show the version they were written at, and no status, so they go stale after a disposition | Open | None |
+| R7 | `show` exits 0 even when its pack differs from the stored case; no test for a disposition that fails part-way; `StoredCase.outcome` isn't typed; `dispose` prints `+00:00` where the packs print `Z` | Open | None |
+| R8 | The reviewer ID is whatever the user types, and nothing records who viewed a case | Open: out of scope in `intent.md` | None |
+
 Found at M5a before the review, and fixed: a database made before M5a crashed the run on the missing `facts_sha256` column, so the schema now has a version and an older database is refused; and the end-to-end test wrote packs into the repository's `out/`.
 
 The reasons for each decision are mine to add.

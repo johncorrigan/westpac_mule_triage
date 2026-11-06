@@ -1,3 +1,4 @@
+import sqlite3
 from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
@@ -5,9 +6,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
+from mule_triage.audit import AuditEvent, AuditLog, EventType, payload_json
+from mule_triage.clock import Clock
 from mule_triage.contracts import (
     AccountProfile,
     AccountResult,
+    Alert,
     IngestCounts,
     Payment,
     RulesConfig,
@@ -20,8 +24,10 @@ from mule_triage.ingest import ParsedFile, parse_payments, parse_profiles, read_
 from mule_triage.report import write_reports
 from mule_triage.signals import activities
 from mule_triage.store import (
+    CaseChange,
     CaseSnapshot,
     CaseVersion,
+    ChangeKind,
     FileTally,
     InputFile,
     RunId,
@@ -35,6 +41,7 @@ class Settings:
     database: Path
     rules: RulesConfig
     out: Path
+    clock: Clock
 
 
 class RunStore(Protocol):
@@ -60,9 +67,12 @@ class RunStore(Protocol):
         run_id: RunId,
         rules: RulesConfig,
         snapshots: tuple[CaseSnapshot, ...],
-    ) -> None: ...
+    ) -> tuple[CaseChange, ...]: ...
 
     def case_versions(self, as_of: datetime) -> tuple[CaseVersion, ...]: ...
+
+    @property
+    def connection(self) -> sqlite3.Connection: ...
 
 
 def run(
@@ -86,25 +96,63 @@ def triage(
     store: RunStore,
 ) -> RunResult:
     """Signals read every stored payment, because on a re-run every line is a duplicate.
-    Reports are written after the commit, for every case at this as-of time."""
+    Each case change is audited in the run's transaction; reports are written after the
+    commit, for every case at this as-of time."""
     parsed_payments = parse_payments(read_lines(payments))
     parsed_profiles = parse_profiles(read_lines(profiles))
+    log = AuditLog(store.connection)
     with store.transaction():
+        log.create()
         tally = ingest(as_of, parsed_payments, parsed_profiles, store)
         packs = evidence_packs(
             store.stored_payments(), store.stored_profiles(), as_of, settings.rules
         )
-        store.save_outcomes(
+        changes = store.save_outcomes(
             tally.run_id,
             settings.rules,
             tuple(CaseSnapshot(pack.result, facts_sha256(pack)) for pack in packs),
         )
+        at = settings.clock.now()
+        for change in changes:
+            log.append(case_event(change, as_of, at, tally.run_id))
         versions = store.case_versions(as_of)
     by_account = {pack.account_id: pack for pack in packs}
     write_reports(
         settings.out, ((by_account[case.account_id], case.version) for case in versions)
     )
     return run_result(tally.payments, tuple(pack.result for pack in packs))
+
+
+CASE_EVENTS = {
+    ChangeKind.OPENED: EventType.CASE_OPENED,
+    ChangeKind.CHANGED: EventType.CASE_CHANGED,
+    ChangeKind.REOPENED: EventType.CASE_REOPENED,
+}
+
+
+def case_event(
+    change: CaseChange, as_of: datetime, at: datetime, run_id: RunId
+) -> AuditEvent:
+    result = change.snapshot.result
+    return AuditEvent(
+        CASE_EVENTS[change.kind],
+        result.account_id,
+        as_of,
+        at,
+        payload_json(
+            {
+                "run_id": run_id,
+                "version": change.version,
+                "outcome": result.outcome.value,
+                "priority": (
+                    result.priority.value if isinstance(result, Alert) else None
+                ),
+                "incomplete": isinstance(result, Alert) and result.incomplete,
+                "reasons": sorted(result.reasons),
+                "facts_sha256": change.snapshot.facts_sha256,
+            }
+        ),
+    )
 
 
 def record_run(
