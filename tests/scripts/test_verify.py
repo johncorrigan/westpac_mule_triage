@@ -107,21 +107,26 @@ def test_passes_an_answer_key_and_data_that_match_their_checksums(
     assert outcome.detail == "2 files match SHA256SUMS"
 
 
-def test_ignores_an_unlisted_file_beside_the_answer_key(
+def test_ignores_unlisted_python_files_in_the_golden_folder(
     verify: ModuleType, tmp_path: Path
 ) -> None:
     key = write_answer_key(tmp_path / "golden")
     (tmp_path / "golden" / "test_golden.py").write_bytes(b"")
+    (tmp_path / "golden" / "__pycache__").mkdir()
+    (tmp_path / "golden" / "__pycache__" / "test_golden.cpython-314.pyc").write_bytes(
+        b""
+    )
 
     outcome = verify.check_golden(key)
 
     assert outcome.status == verify.Status.PASS
 
 
-def test_skips_while_there_is_no_answer_key(verify: ModuleType, tmp_path: Path) -> None:
+def test_fails_when_there_is_no_answer_key(verify: ModuleType, tmp_path: Path) -> None:
     outcome = verify.check_golden(tmp_path / "golden" / "expected")
 
-    assert outcome.status == verify.Status.SKIP
+    assert outcome.status == verify.Status.FAIL
+    assert outcome.detail == "tests/golden/expected/ is missing"
 
 
 @pytest.mark.parametrize(
@@ -138,6 +143,16 @@ def test_skips_while_there_is_no_answer_key(verify: ModuleType, tmp_path: Path) 
         (
             lambda key: (key / "extra.json").write_bytes(EMPTY),
             "expected/extra.json isn't listed",
+        ),
+        (
+            lambda key: (key / "SHA256SUMS").write_bytes(
+                f"{EMPTY_DIGEST}  expected/outcomes.json\n".encode()
+            ),
+            "payments.jsonl isn't listed",
+        ),
+        (
+            lambda key: (key.parent / "notes.md").write_bytes(EMPTY),
+            "notes.md isn't listed",
         ),
         (
             lambda key: (key / "outcomes.json").unlink(),
@@ -165,6 +180,8 @@ def test_skips_while_there_is_no_answer_key(verify: ModuleType, tmp_path: Path) 
         "changed answer key",
         "changed data file",
         "unlisted file in the answer key",
+        "data file dropped from the checksums",
+        "unlisted file beside the answer key",
         "missing answer key",
         "missing data file",
         "path above the golden folder",

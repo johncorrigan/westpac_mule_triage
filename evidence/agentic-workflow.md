@@ -43,3 +43,19 @@ The reasons for each decision are mine to add.
 ### M2 (by me)
 
 At M2, I had a separate planning chat (Claude Opus 5.5, not the builder agent) draft the golden README and answer key from rules I agreed. I checked every case and committed both by hand.
+
+### M2 review (by the building agent)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | The checksum gate didn't require the README or data files to be listed, so deleting a line from `SHA256SUMS` removed their protection | Fix | Every file in `tests/golden/` except Python code must be listed; two cases failed first |
+| R2 | Nothing checksums `tests/golden/test_golden.py`, so its comparison could be weakened unnoticed | Open: mine to decide | None |
+| R3 | The as-of time is fixed in the test, not in the answer key | Open: mine to decide | None |
+| R4 | The strict contracts reject every valid line if ingest parses it into a dictionary first | Fix | The rule is in `design.md`; the strict-mode tests already fail if strict mode is loosened |
+| R5 | The contracts accept empty IDs, self-payments, a knowledge time before the event time, and amounts beyond SQLite's integer | Open: suggested for M3 | None |
+| R6 | `RunResult` keeps counts and IDs apart, so they can disagree; a rejected line has no line number or reason | Open: suggested for M3 | None |
+| R7 | An `Alert` can be incomplete without `PROFILE_MISSING`, and `Unknown` accepts any reason code | Open: suggested for M4 | None |
+| R8 | The scenario has no MEDIUM alert, no late or out-of-window record, and no Conflict | Open: mine to decide | None |
+| R9 | `Status.SKIP` was dead code; a linked `expected/` would move the checksum's root; `Conflict` can hold one value; Python 3.11 hasn't run the slotted generic dataclasses | Fix, for `SKIP` only | `SKIP` removed; the rest noted |
+
+The reasons for each decision are mine to add.

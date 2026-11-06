@@ -18,9 +18,40 @@ flowchart TD
     L2 --> L1["1: contracts, errors, clock"]
 ```
 
-Only `cli.py` exists so far, and it only parses arguments. It's the composition root: as modules
-arrive, it builds the real implementations and passes them in, and it's the only module that may
-print, read the wall clock or catch broadly.
+Only `cli.py`, `contracts.py` and `pipeline.py` exist so far, and `cli.py` only parses arguments.
+It's the composition root: as modules arrive, it builds the real implementations and passes them
+in, and it's the only module that may print, read the wall clock or catch broadly.
+
+## Contracts
+
+Written at M2. `contracts.py` (layer 1) holds the data that crosses a boundary, and computes
+nothing:
+
+- **Inputs:** `Payment` and `AccountProfile` are pydantic models that are strict, frozen and
+  refuse unknown fields. A name field, a time without a timezone, or an amount that isn't whole
+  cents is rejected rather than coerced, and times are read as UTC (`tests/unit/test_contracts.py`).
+  Ingest must read each line with `model_validate_json`: strict mode rejects a time given as text
+  in a Python dictionary, so `model_validate(json.loads(line))` would reject every valid line.
+- **Signal values:** `Known`, `Unknown` (with its reason code) and `Conflict`, so missing or
+  contradictory data is a value the rules must handle, never a silent zero.
+- **Results:** each account gets exactly one of `Alert`, `NeedsReview` or `NoAlert`, with its
+  reason codes as a set. Only an `Alert` carries a priority and the INCOMPLETE flag. `RunResult`
+  adds the payment ingest counts and the rejected and duplicate IDs.
+
+`pipeline.run` takes the two input paths, the as-of time and `Settings` (only the database path
+so far), and raises `NotImplementedError` until M3 and M4. `tests/golden/test_golden.py` is
+marked as an expected failure for that exception alone, so any other error turns it red.
+
+## The four boundaries
+
+| Boundary | What happens there | Who owns it |
+|---|---|---|
+| Signal | each signal is Known, Unknown or Conflict, and each account gets one outcome | the rules: `signals` and `rules`, layer 3 |
+| Investigation | an evidence pack and a draft narrative; the model never sets an outcome or a priority | the investigator, helped by `evidence` and `narrative`, layer 4 |
+| Decision | the investigator's disposition, recorded in an audit table that refuses updates and deletes | the investigator: `review` and `audit`, layer 5 |
+| Action | freezing, reporting or contacting an account | people and systems outside the tool, which does nothing here |
+
+Only the contracts exist so far: layers 3 to 5 are planned for M4 to M6.
 
 ## Code rules the architecture tests enforce
 

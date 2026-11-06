@@ -5,7 +5,18 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from mule_triage.contracts import AccountProfile, Payment
+from mule_triage.contracts import (
+    AccountId,
+    AccountProfile,
+    AccountResult,
+    Alert,
+    NeedsReview,
+    NoAlert,
+    Outcome,
+    Payment,
+    Priority,
+    ReasonCode,
+)
 
 PAYMENT = {
     "transaction_id": "TX-101-02",
@@ -151,3 +162,24 @@ def test_a_payment_cant_be_changed_once_read() -> None:
 
     with pytest.raises(ValidationError, match="frozen_instance"):
         payment.amount_cents = 1
+
+
+ACCOUNT = AccountId("ACC-101")
+REASONS = frozenset({ReasonCode.FAN_IN})
+
+
+@pytest.mark.parametrize(
+    ("result", "outcome"),
+    [
+        (Alert(ACCOUNT, REASONS, Priority.MEDIUM, incomplete=False), Outcome.ALERT),
+        (NeedsReview(ACCOUNT, REASONS), Outcome.NEEDS_REVIEW),
+        (NoAlert(ACCOUNT, REASONS), Outcome.NO_ALERT),
+    ],
+    ids=["alert", "needs review", "no alert"],
+)
+def test_each_account_result_reports_its_outcome(
+    result: AccountResult, outcome: Outcome
+) -> None:
+    reported = result.outcome
+
+    assert reported is outcome

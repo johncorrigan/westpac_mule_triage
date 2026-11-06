@@ -37,6 +37,7 @@ TOOL_TIMEOUT_SECONDS = 600
 GOLDEN_EXPECTED = ROOT / "tests" / "golden" / "expected"
 GOLDEN_MANIFEST = "SHA256SUMS"
 GOLDEN_IGNORED = frozenset({".DS_Store"})
+GOLDEN_CODE_SUFFIXES = frozenset({".py", ".pyc"})
 MANIFEST_LINE = re.compile(r"([0-9a-fA-F]{64}) [ *](.+)")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 ENV_FILE = re.compile(r"(^|/)\.env(\.[^/]+)?$", re.IGNORECASE)
@@ -61,7 +62,6 @@ SECRET_PATTERNS = (
 class Status(StrEnum):
     PASS = "PASS"
     FAIL = "FAIL"
-    SKIP = "SKIP"
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,10 +205,21 @@ def sha256_of(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def needs_a_checksum(path: Path, golden: Path) -> bool:
+    return not (
+        path.suffix in GOLDEN_CODE_SUFFIXES
+        or "__pycache__" in path.relative_to(golden).parts
+        or path.name in GOLDEN_IGNORED
+    )
+
+
 def check_golden(expected: Path) -> Outcome:
-    """The manifest lists paths relative to the golden folder, which holds the answer key."""
-    if not expected.exists():
-        return Outcome(Status.SKIP, "tests/golden/expected/ doesn't exist yet")
+    """The manifest lists paths relative to the golden folder, which holds the answer key.
+
+    Every file in that folder except Python code must be listed.
+    """
+    if not expected.is_dir():
+        return Outcome(Status.FAIL, "tests/golden/expected/ is missing")
     expected = expected.resolve()
     golden = expected.parent
     manifest = expected / GOLDEN_MANIFEST
@@ -229,8 +240,8 @@ def check_golden(expected: Path) -> Outcome:
         return Outcome(Status.FAIL, f"{GOLDEN_MANIFEST} lists no files")
     present = {
         path.relative_to(golden).as_posix()
-        for path in expected.rglob("*")
-        if path.is_file() and path != manifest and path.name not in GOLDEN_IGNORED
+        for path in golden.rglob("*")
+        if path.is_file() and path != manifest and needs_a_checksum(path, golden)
     }
     problems = [f"{name} isn't listed" for name in sorted(present - listed.keys())]
     for name, digest in sorted(listed.items()):
@@ -320,7 +331,6 @@ def run_gates(gates: list[Gate]) -> list[GateResult]:
 
 def report(results: list[GateResult], mode: str) -> None:
     failed = [result for result in results if result.outcome.status is Status.FAIL]
-    skipped = [result for result in results if result.outcome.status is Status.SKIP]
     for result in failed:
         say(f"\n--- {result.name} ---\n{result.outcome.detail}")
     width = max(len("Gate"), *(len(result.name) for result in results))
@@ -335,8 +345,6 @@ def report(results: list[GateResult], mode: str) -> None:
     say("")
     if failed:
         say(f"{mode}: FAILED ({', '.join(result.name for result in failed)})")
-    elif skipped:
-        say(f"{mode}: passed, with {len(skipped)} gate(s) skipped")
     else:
         say(f"{mode}: every gate passed")
 

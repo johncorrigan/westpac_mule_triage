@@ -13,8 +13,9 @@ nothing runs.
 3. mypy, in strict mode, over `src/`, `tests/` and `scripts/`, targeting Python 3.11;
 4. pytest over every test folder, with an 80% coverage floor on the package;
 5. the golden checksum of my answer key, the golden README and both data files, listed in
-   `tests/golden/expected/SHA256SUMS` by their paths in `tests/golden/`. A listed path outside
-   that folder fails it, and it's skipped only while `tests/golden/expected/` doesn't exist;
+   `tests/golden/expected/SHA256SUMS` by their paths in `tests/golden/`. A missing or changed
+   file fails it, as do a file in `expected/` that isn't listed, a listed path outside
+   `tests/golden/` and a missing answer key;
 6. a secrets check over every file Git tracks or would track;
 7. a smoke run of `python -m mule_triage --help`.
 
@@ -56,8 +57,6 @@ Only the first row exists in this build.
   with Python 3.14.
 - **No secrets scan of the history:** the secrets check reads the current files, not past
   commits, and uses a handful of patterns rather than a full scanner.
-- **The golden checksum skips while there's no answer key.** From M2, a missing key must turn it
-  red (`PLAN.md`, M1).
 - **The version checks at the top of `verify.py` and `quickstart.py`** are skipped by mypy and
   run by no test. They were checked by hand with Apple's Python 3.9.6.
 - **The guard's own tests,** `.cursor/hooks/guard_tests.py`, are run by nothing now that CI is

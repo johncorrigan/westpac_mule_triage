@@ -70,3 +70,18 @@ committed recordings, so no test needs a model.
 - **AI narrative evaluation:** metric and threshold to be set by me: [TBD].
 
 `PLAN.md` doesn't yet have a milestone that measures the two evaluations.
+
+## The golden scenario
+
+Written at M2. One day, 2 November 2026, judged at midnight UTC: 35 payment lines and 39
+profiles in `tests/golden/`, with my answer key in `expected/outcomes.toml`. The key, the README
+and both data files are checksummed. `tests/golden/test_golden.py` compares a run with the key,
+and is an expected failure until M4.
+
+- **Covered:** every outcome, with ALERT for ACC-101 and ACC-106, NEEDS_REVIEW for ACC-105 and
+  NO_ALERT for the rest; the one Unknown reason, `PROFILE_MISSING`; an INCOMPLETE alert; HIGH
+  priority, once raised by an Unknown; a deliberate miss and two decoys; and an invalid record, a
+  duplicate and an instruction injected into a payment reference.
+- **Not covered:** a MEDIUM alert; a record that arrives after the as-of time or falls outside
+  the 24-hour window, so the knowledge-time filtering isn't tested end to end; a Conflict; and
+  more than one day.
