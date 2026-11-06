@@ -1,6 +1,37 @@
-/.idea/
-.DS_Store
+# Virtual environment
+.venv/
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Test, type-check and coverage output
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Left behind by the editable install and packaging tools
+*.egg-info/
+build/
+dist/
+
+# Local runs and their databases
+out/
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# macOS and PyCharm
+.DS_Store
+.idea/
+
+# State that the laptop's endpoint tooling writes into .cursor/
 /.cursor/.endpoint-risk-state.json
 /.cursor/.ld-flag-cache.json
 /.cursor/.workspace-profile.json

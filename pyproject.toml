@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mule-triage"
+version = "0.1.0"
+description = "Triage possible money-mule accounts in one day of synthetic payments."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.7,<3"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "mypy", "black", "pyflakes"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
+
+[tool.mypy]
+strict = true
+python_version = "3.11"
+mypy_path = "src"
+files = ["src", "tests", "scripts"]
+
+[tool.black]
+target-version = ["py311"]
+
+[tool.coverage.run]
+omit = ["*/__main__.py"]
