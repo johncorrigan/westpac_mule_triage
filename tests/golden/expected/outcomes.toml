@@ -12,6 +12,7 @@ duplicate_ids = ["TX-102-06"]
 [accounts.ACC-101]
 outcome = "ALERT"
 reasons = ["FAN_IN", "PASS_THROUGH", "NEW_ACCOUNT"]
+priority = "HIGH"
 
 [accounts.ACC-102]
 outcome = "NO_ALERT"
@@ -33,6 +34,7 @@ reasons = ["PASS_THROUGH", "PROFILE_MISSING"]
 outcome = "ALERT"
 reasons = ["FAN_IN", "PASS_THROUGH", "PROFILE_MISSING"]
 incomplete = true
+priority = "HIGH"
 
 [accounts.ACC-107]
 outcome = "NO_ALERT"
