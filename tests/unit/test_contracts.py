@@ -141,6 +141,13 @@ def test_rejects_an_amount_that_isnt_positive(amount: int) -> None:
         Payment.model_validate_json(line)
 
 
+def test_rejects_an_amount_too_large_for_sqlite_to_store() -> None:
+    line = payment_line(amount_cents=2**63)
+
+    with pytest.raises(ValidationError, match="less_than_equal"):
+        Payment.model_validate_json(line)
+
+
 @pytest.mark.parametrize("field", list(PAYMENT))
 def test_rejects_a_payment_missing_a_field(field: str) -> None:
     line = without(PAYMENT, field)

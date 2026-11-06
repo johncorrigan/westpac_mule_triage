@@ -59,3 +59,19 @@ At M2, I had a separate planning chat (Claude Opus 5.5, not the builder agent) d
 | R9 | `Status.SKIP` was dead code; a linked `expected/` would move the checksum's root; `Conflict` can hold one value; Python 3.11 hasn't run the slotted generic dataclasses | Fix, for `SKIP` only | `SKIP` removed; the rest noted |
 
 The reasons for each decision are mine to add.
+
+### M3 self-review (by the building agent)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | A line holding a number of more than 4,300 digits made `json.loads` raise `ValueError`, which crashed the run instead of rejecting the line | Fix | `ValueError` is caught; the test failed first |
+| R2 | An amount of 2^63 cents or more passed ingest, then crashed the store | Fix | `amount_cents` is capped at 2^63 - 1, SQLite's largest integer; the contract and store tests failed first. Closes that part of M2's R5 |
+| R3 | Reconciliation compares totals, so a lost line and a line recorded twice cancel out | Open | None |
+| R4 | The dropping fake loses a record before the real store sees it, and the part-way failure comes after the whole save | Open | None |
+| R5 | `ROLLBACK` after SQLite has rolled back by itself would hide the real error (not verified) | Open | None |
+| R6 | On a re-run every record is a duplicate, so signals built from the run's accepted records would clear every account | Fix | Noted in `PLAN.md`, M4 |
+| R7 | The run ledger doesn't record which files a run read | Open | None |
+| R8 | `decisions.md` said primary keys make a re-run add nothing; the store's look-up does | Fix | Reworded |
+| R9 | A corrected profile is rejected for ever; no schema version; `run` ignores `settings.database` when given a store; one ingest line uncovered | Open | None |
+
+The reasons for each decision are mine to add.

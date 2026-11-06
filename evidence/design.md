@@ -18,7 +18,8 @@ flowchart TD
     L2 --> L1["1: contracts, errors, clock"]
 ```
 
-Only `cli.py`, `contracts.py` and `pipeline.py` exist so far, and `cli.py` only parses arguments.
+So far `cli.py`, `contracts.py`, `errors.py`, `ingest.py`, `store.py` and `pipeline.py` exist,
+and `cli.py` only parses arguments.
 It's the composition root: as modules arrive, it builds the real implementations and passes them
 in, and it's the only module that may print, read the wall clock or catch broadly.
 
@@ -39,8 +40,18 @@ nothing:
   adds the payment ingest counts and the rejected and duplicate IDs.
 
 `pipeline.run` takes the two input paths, the as-of time and `Settings` (only the database path
-so far), and raises `NotImplementedError` until M3 and M4. `tests/golden/test_golden.py` is
-marked as an expected failure for that exception alone, so any other error turns it red.
+so far). From M3 it ingests and stores the run, then raises `NotImplementedError` where the
+signals will go, until M4. The two golden outcome tests are marked as expected failures for that
+exception alone, so any other error turns them red.
+
+## Store and reconciliation
+
+Written at M3. `store.py` (layer 2) keeps payments, profiles, rejections, duplicates and a run
+ledger in one SQLite file in WAL mode; `ingest.py` only parses, and a record already stored is
+recorded as a duplicate if it's identical and rejected if it differs, so a re-run adds nothing.
+Before committing, `pipeline.reconcile` checks per file that the lines read, as recorded in the
+ledger, equal the run's stored accepted, rejected and duplicate rows, and otherwise raises
+`ReconciliationError`, which rolls the whole run back.
 
 ## The four boundaries
 

@@ -1,4 +1,6 @@
+import sqlite3
 import tomllib
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Self
@@ -15,7 +17,8 @@ from mule_triage.contracts import (
     ReasonCode,
     RunResult,
 )
-from mule_triage.pipeline import Settings, run
+from mule_triage.pipeline import Settings, record_run, run
+from mule_triage.store import FileTally, RunTally, open_store
 
 GOLDEN = Path(__file__).resolve().parent
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
@@ -72,15 +75,33 @@ def run_golden(tmp_path: Path) -> RunResult:
     )
 
 
-def observed_ingest(result: RunResult) -> ExpectedIngest:
-    counts = result.payment_counts
+def record_golden(database: Path) -> RunTally:
+    with open_store(database) as store:
+        return record_run(
+            GOLDEN / "payments.jsonl", GOLDEN / "profiles.jsonl", AS_OF, store
+        )
+
+
+def stored_records(database: Path) -> tuple[list[tuple[object, ...]], ...]:
+    with closing(sqlite3.connect(database)) as connection:
+        return (
+            connection.execute("SELECT * FROM payments ORDER BY 1").fetchall(),
+            connection.execute("SELECT * FROM profiles ORDER BY 1").fetchall(),
+        )
+
+
+def observed_ingest(tally: FileTally) -> ExpectedIngest:
     return ExpectedIngest(
-        received=counts.received,
-        accepted=counts.accepted,
-        rejected=counts.rejected,
-        duplicates=counts.duplicates,
-        rejected_ids=frozenset(result.rejected_payment_ids),
-        duplicate_ids=frozenset(result.duplicate_payment_ids),
+        received=tally.received,
+        accepted=tally.accepted,
+        rejected=len(tally.rejections),
+        duplicates=len(tally.duplicate_ids),
+        rejected_ids=frozenset(
+            rejection.record_id
+            for rejection in tally.rejections
+            if rejection.record_id is not None
+        ),
+        duplicate_ids=frozenset(tally.duplicate_ids),
     )
 
 
@@ -101,13 +122,24 @@ def results_by_account(result: RunResult) -> dict[AccountId, AccountResult]:
     return by_account
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 def test_payment_ingest_matches_the_answer_key(tmp_path: Path) -> None:
     key = load_answer_key()
 
-    result = run_golden(tmp_path)
+    tally = record_golden(tmp_path / "golden.db")
 
-    assert observed_ingest(result) == key.ingest
+    assert observed_ingest(tally.payments) == key.ingest
+
+
+def test_ingesting_the_golden_files_again_stores_nothing_new(tmp_path: Path) -> None:
+    database = tmp_path / "golden.db"
+    record_golden(database)
+    before = stored_records(database)
+
+    second = record_golden(database)
+
+    assert stored_records(database) == before
+    payments = observed_ingest(second.payments)
+    assert (payments.accepted, payments.rejected, payments.duplicates) == (0, 1, 34)
 
 
 @pytest.mark.xfail(strict=True, raises=NotImplementedError)

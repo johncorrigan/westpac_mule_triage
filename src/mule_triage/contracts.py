@@ -14,6 +14,9 @@ from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
 TransactionId = NewType("TransactionId", str)
 AccountId = NewType("AccountId", str)
 
+# SQLite's largest integer, so every accepted amount can be stored.
+MAX_AMOUNT_CENTS = 2**63 - 1
+
 
 def to_utc(moment: datetime) -> datetime:
     return moment.astimezone(UTC)
@@ -28,7 +31,7 @@ class Payment(BaseModel):
     transaction_id: TransactionId
     from_account: AccountId
     to_account: AccountId
-    amount_cents: int = Field(gt=0)
+    amount_cents: int = Field(gt=0, le=MAX_AMOUNT_CENTS)
     event_time: UtcDatetime
     knowledge_time: UtcDatetime
     reference: str
