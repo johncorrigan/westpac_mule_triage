@@ -12,8 +12,9 @@ nothing runs.
 2. pyflakes, the lint;
 3. mypy, in strict mode, over `src/`, `tests/` and `scripts/`, targeting Python 3.11;
 4. pytest over every test folder, with an 80% coverage floor on the package;
-5. the golden checksum of my answer key, skipped only while `tests/golden/expected/` doesn't
-   exist;
+5. the golden checksum of my answer key, the golden README and both data files, listed in
+   `tests/golden/expected/SHA256SUMS` by their paths in `tests/golden/`. A listed path outside
+   that folder fails it, and it's skipped only while `tests/golden/expected/` doesn't exist;
 6. a secrets check over every file Git tracks or would track;
 7. a smoke run of `python -m mule_triage --help`.
 

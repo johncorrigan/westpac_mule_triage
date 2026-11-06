@@ -74,25 +74,52 @@ def test_ignores_a_pinned_package_that_this_platform_doesnt_install(
     assert problems == []
 
 
-def write_answer_key(folder: Path) -> None:
-    folder.mkdir()
-    (folder / "outcomes.json").write_bytes(b"{}\n")
-    digest = hashlib.sha256(b"{}\n").hexdigest()
-    (folder / "SHA256SUMS").write_bytes(f"{digest}  outcomes.json\n".encode())
+EMPTY = b"{}\n"
+EMPTY_DIGEST = hashlib.sha256(EMPTY).hexdigest()
 
 
-def test_passes_an_answer_key_that_matches_its_checksums(
+def write_answer_key(golden: Path) -> Path:
+    expected = golden / "expected"
+    expected.mkdir(parents=True)
+    (expected / "outcomes.json").write_bytes(EMPTY)
+    (golden / "payments.jsonl").write_bytes(EMPTY)
+    (expected / "SHA256SUMS").write_bytes(
+        f"{EMPTY_DIGEST}  expected/outcomes.json\n"
+        f"{EMPTY_DIGEST}  payments.jsonl\n".encode()
+    )
+    return expected
+
+
+def list_a_file_outside_the_golden_folder(key: Path, listed_as: str) -> None:
+    (key.parent.parent / "outside.json").write_bytes(EMPTY)
+    with (key / "SHA256SUMS").open("a", encoding="utf-8") as manifest:
+        manifest.write(f"{EMPTY_DIGEST}  {listed_as}\n")
+
+
+def test_passes_an_answer_key_and_data_that_match_their_checksums(
     verify: ModuleType, tmp_path: Path
 ) -> None:
-    write_answer_key(tmp_path / "expected")
+    key = write_answer_key(tmp_path / "golden")
 
-    outcome = verify.check_golden(tmp_path / "expected")
+    outcome = verify.check_golden(key)
+
+    assert outcome.status == verify.Status.PASS
+    assert outcome.detail == "2 files match SHA256SUMS"
+
+
+def test_ignores_an_unlisted_file_beside_the_answer_key(
+    verify: ModuleType, tmp_path: Path
+) -> None:
+    key = write_answer_key(tmp_path / "golden")
+    (tmp_path / "golden" / "test_golden.py").write_bytes(b"")
+
+    outcome = verify.check_golden(key)
 
     assert outcome.status == verify.Status.PASS
 
 
 def test_skips_while_there_is_no_answer_key(verify: ModuleType, tmp_path: Path) -> None:
-    outcome = verify.check_golden(tmp_path / "expected")
+    outcome = verify.check_golden(tmp_path / "golden" / "expected")
 
     assert outcome.status == verify.Status.SKIP
 
@@ -100,32 +127,63 @@ def test_skips_while_there_is_no_answer_key(verify: ModuleType, tmp_path: Path) 
 @pytest.mark.parametrize(
     ("tamper", "reason"),
     [
-        (lambda key: (key / "outcomes.json").write_bytes(b"[]\n"), "has changed"),
-        (lambda key: (key / "extra.json").write_bytes(b"{}\n"), "isn't listed"),
-        (lambda key: (key / "outcomes.json").unlink(), "is missing"),
+        (
+            lambda key: (key / "outcomes.json").write_bytes(b"[]\n"),
+            "expected/outcomes.json has changed",
+        ),
+        (
+            lambda key: (key.parent / "payments.jsonl").write_bytes(b"[]\n"),
+            "payments.jsonl has changed",
+        ),
+        (
+            lambda key: (key / "extra.json").write_bytes(EMPTY),
+            "expected/extra.json isn't listed",
+        ),
+        (
+            lambda key: (key / "outcomes.json").unlink(),
+            "expected/outcomes.json is missing",
+        ),
+        (
+            lambda key: (key.parent / "payments.jsonl").unlink(),
+            "payments.jsonl is missing",
+        ),
+        (
+            lambda key: list_a_file_outside_the_golden_folder(key, "../outside.json"),
+            "../outside.json is outside the golden folder",
+        ),
+        (
+            lambda key: list_a_file_outside_the_golden_folder(
+                key, str(key.parent.parent / "outside.json")
+            ),
+            "outside.json is outside the golden folder",
+        ),
         (lambda key: (key / "SHA256SUMS").unlink(), "SHA256SUMS is missing"),
         (lambda key: (key / "SHA256SUMS").write_bytes(b"not a checksum\n"), "line 1"),
         (lambda key: (key / "SHA256SUMS").write_bytes(b"\n"), "lists no files"),
     ],
     ids=[
-        "changed file",
-        "unlisted file",
-        "missing file",
+        "changed answer key",
+        "changed data file",
+        "unlisted file in the answer key",
+        "missing answer key",
+        "missing data file",
+        "path above the golden folder",
+        "absolute path outside the golden folder",
         "missing checksums",
         "malformed line",
         "empty checksums",
     ],
 )
-def test_fails_an_answer_key_that_doesnt_match_its_checksums(
+def test_fails_a_golden_file_that_doesnt_match_its_checksums(
     verify: ModuleType,
     tmp_path: Path,
     tamper: Callable[[Path], object],
     reason: str,
 ) -> None:
-    write_answer_key(tmp_path / "expected")
-    tamper(tmp_path / "expected")
+    key = write_answer_key(tmp_path / "golden")
+    tamper(key)
 
-    outcome = verify.check_golden(tmp_path / "expected")
+    outcome = verify.check_golden(key)
 
     assert outcome.status == verify.Status.FAIL
     assert reason in outcome.detail

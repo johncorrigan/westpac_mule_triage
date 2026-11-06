@@ -206,8 +206,11 @@ def sha256_of(path: Path) -> str:
 
 
 def check_golden(expected: Path) -> Outcome:
+    """The manifest lists paths relative to the golden folder, which holds the answer key."""
     if not expected.exists():
         return Outcome(Status.SKIP, "tests/golden/expected/ doesn't exist yet")
+    expected = expected.resolve()
+    golden = expected.parent
     manifest = expected / GOLDEN_MANIFEST
     if not manifest.is_file():
         return Outcome(Status.FAIL, f"{GOLDEN_MANIFEST} is missing from the answer key")
@@ -225,15 +228,18 @@ def check_golden(expected: Path) -> Outcome:
     if not listed:
         return Outcome(Status.FAIL, f"{GOLDEN_MANIFEST} lists no files")
     present = {
-        path.relative_to(expected).as_posix()
+        path.relative_to(golden).as_posix()
         for path in expected.rglob("*")
         if path.is_file() and path != manifest and path.name not in GOLDEN_IGNORED
     }
     problems = [f"{name} isn't listed" for name in sorted(present - listed.keys())]
     for name, digest in sorted(listed.items()):
-        if name not in present:
+        target = (golden / name).resolve()
+        if not target.is_relative_to(golden):
+            problems.append(f"{name} is outside the golden folder")
+        elif not target.is_file():
             problems.append(f"{name} is missing")
-        elif sha256_of(expected / name) != digest:
+        elif sha256_of(target) != digest:
             problems.append(f"{name} has changed")
     if problems:
         return Outcome(Status.FAIL, "; ".join(problems))
