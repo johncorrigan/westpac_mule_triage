@@ -1,18 +1,32 @@
-"""The data that crosses a boundary: the inputs, the signal values and the results of a run.
+"""The data that crosses a boundary: the inputs, the rules, the signal values and the results.
 
-The inputs are strict, so nothing is coerced: "90000" or 900.0 isn't read as cents, nor a number
-as a time.
+The inputs and the rules are strict, so nothing is coerced: "90000" or 900.0 isn't read as cents,
+nor a number as a time, nor "12" as hours.
 """
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, ClassVar, Generic, NewType, TypeAlias, TypeVar
+from typing import Annotated, ClassVar, Generic, NewType, Self, TypeAlias, TypeVar
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
 TransactionId = NewType("TransactionId", str)
 AccountId = NewType("AccountId", str)
+
+# Account IDs are printed, so a newline or control character could forge a line of output.
+# pydantic's regex engine reads `$` as the end of the text, so a trailing newline doesn't match.
+ACCOUNT_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$"
+PlainAccountId = Annotated[AccountId, StringConstraints(pattern=ACCOUNT_ID_PATTERN)]
 
 # SQLite's largest integer, so every accepted amount can be stored.
 MAX_AMOUNT_CENTS = 2**63 - 1
@@ -29,8 +43,8 @@ class Payment(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     transaction_id: TransactionId
-    from_account: AccountId
-    to_account: AccountId
+    from_account: PlainAccountId
+    to_account: PlainAccountId
     amount_cents: int = Field(gt=0, le=MAX_AMOUNT_CENTS)
     event_time: UtcDatetime
     knowledge_time: UtcDatetime
@@ -40,9 +54,54 @@ class Payment(BaseModel):
 class AccountProfile(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    account_id: AccountId
+    account_id: PlainAccountId
     opened_at: UtcDatetime
     knowledge_time: UtcDatetime
+
+
+class FanInRule(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    min_senders: int = Field(ge=1)
+
+
+class PassThroughRule(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    min_ratio: Decimal = Field(gt=0)
+    max_hours: int = Field(gt=0)
+
+
+class NewAccountRule(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    younger_than_days: int = Field(ge=1)
+
+
+class OutcomeRule(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    alert_at: int = Field(ge=1)
+    high_priority_at: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def high_priority_is_never_below_an_alert(self) -> Self:
+        if self.high_priority_at < self.alert_at:
+            raise ValueError("high_priority_at is below alert_at")
+        return self
+
+
+class RulesConfig(BaseModel):
+    """Read from TOML with floats as `Decimal`, so a ratio of 0.80 is exactly 4/5."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    version: str = Field(min_length=1)
+    window_hours: int = Field(gt=0)
+    fan_in: FanInRule
+    pass_through: PassThroughRule
+    new_account: NewAccountRule
+    outcome: OutcomeRule
 
 
 class ReasonCode(StrEnum):
@@ -50,6 +109,7 @@ class ReasonCode(StrEnum):
     PASS_THROUGH = "PASS_THROUGH"
     NEW_ACCOUNT = "NEW_ACCOUNT"
     PROFILE_MISSING = "PROFILE_MISSING"
+    CONFLICTING_RECORDS = "CONFLICTING_RECORDS"
 
 
 class Outcome(StrEnum):

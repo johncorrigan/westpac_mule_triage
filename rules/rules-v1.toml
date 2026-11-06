@@ -1,0 +1,26 @@
+# Rules v1, with the thresholds in tests/golden/README.md. Every setting is required and an
+# unknown one is refused, so a typo stops the run rather than falling back to a default.
+version = "v1"
+
+# Signals count payments with an event time in this many hours before the as-of time.
+window_hours = 24
+
+[fan_in]
+# Breaches when at least this many distinct senders paid the account.
+min_senders = 5
+
+[pass_through]
+# Breaches when the account sent out at least this share of what it received, and its last
+# payment out came at most this many hours after its first payment in.
+min_ratio = 0.80
+max_hours = 12
+
+[new_account]
+# Breaches when the account was opened fewer than this many days before the as-of time.
+younger_than_days = 30
+
+[outcome]
+# ALERT when at least this many signals breach, and HIGH priority when at least this many
+# breach, counting each Unknown as breaching.
+alert_at = 2
+high_priority_at = 3

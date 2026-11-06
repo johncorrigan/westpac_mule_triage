@@ -164,6 +164,44 @@ def test_rejects_a_profile_missing_a_field(field: str) -> None:
         AccountProfile.model_validate_json(line)
 
 
+@pytest.mark.parametrize(
+    "bad_id",
+    [
+        "ACC-1\nACC-999 ALERT HIGH",
+        "ACC-1\n",
+        "ACC-1\x1b[2J",
+        "ACC-\u00fc",
+        "",
+        "A" * 65,
+    ],
+    ids=[
+        "newline",
+        "trailing newline",
+        "control character",
+        "non-ASCII",
+        "empty",
+        "65 long",
+    ],
+)
+@pytest.mark.parametrize(
+    ("model", "field"),
+    [
+        (Payment, "from_account"),
+        (Payment, "to_account"),
+        (AccountProfile, "account_id"),
+    ],
+    ids=["sender", "receiver", "profile"],
+)
+def test_rejects_an_account_id_that_isnt_short_plain_ascii(
+    model: type[BaseModel], field: str, bad_id: str
+) -> None:
+    record = PAYMENT if model is Payment else PROFILE
+    line = json.dumps({**record, field: bad_id})
+
+    with pytest.raises(ValidationError, match="string_pattern_mismatch"):
+        model.model_validate_json(line)
+
+
 def test_a_payment_cant_be_changed_once_read() -> None:
     payment = Payment.model_validate_json(payment_line())
 

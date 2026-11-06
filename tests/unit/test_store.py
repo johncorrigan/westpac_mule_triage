@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from mule_triage.contracts import MAX_AMOUNT_CENTS
+from mule_triage.contracts import MAX_AMOUNT_CENTS, RulesConfig
 from mule_triage.ingest import Rejection, parse_payments, parse_profiles
 from mule_triage.store import FileTally, RunId, SqliteStore, open_store, utc_text
 
@@ -108,6 +108,29 @@ def test_stores_the_largest_amount_a_payment_may_have() -> None:
         tally = store.tally(run_id)
 
     assert tally.payments.accepted == 1
+
+
+def test_reads_back_every_stored_payment_and_profile_as_parsed() -> None:
+    payments = parse_payments([payment_line()])
+    profiles = parse_profiles([profile_line()])
+    with open_store(":memory:") as store:
+        with store.transaction():
+            store.save(AS_OF, payments, profiles)
+
+        stored = (store.stored_payments(), store.stored_profiles())
+
+    assert stored == (
+        (payments.accepted[0].record,),
+        (profiles.accepted[0].record,),
+    )
+
+
+def test_storing_outcomes_for_a_run_that_isnt_in_the_ledger_raises(
+    rules: RulesConfig,
+) -> None:
+    with open_store(":memory:") as store:
+        with pytest.raises(LookupError, match="run 7"):
+            store.save_outcomes(RunId(7), rules, ())
 
 
 def test_tallying_a_run_that_isnt_in_the_ledger_raises() -> None:

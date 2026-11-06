@@ -5,9 +5,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Self
 
-import pytest
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from mule_triage.cli import load_rules
 from mule_triage.contracts import (
     AccountId,
     AccountResult,
@@ -21,6 +21,7 @@ from mule_triage.pipeline import Settings, record_run, run
 from mule_triage.store import FileTally, RunTally, open_store
 
 GOLDEN = Path(__file__).resolve().parent
+RULES = GOLDEN.parents[1] / "rules" / "rules-v1.toml"
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 
 
@@ -71,7 +72,7 @@ def run_golden(tmp_path: Path) -> RunResult:
         GOLDEN / "payments.jsonl",
         GOLDEN / "profiles.jsonl",
         AS_OF,
-        Settings(database=tmp_path / "golden.db"),
+        Settings(database=tmp_path / "golden.db", rules=load_rules(RULES)),
     )
 
 
@@ -142,7 +143,6 @@ def test_ingesting_the_golden_files_again_stores_nothing_new(tmp_path: Path) -> 
     assert (payments.accepted, payments.rejected, payments.duplicates) == (0, 1, 34)
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 def test_each_listed_account_matches_the_answer_key(tmp_path: Path) -> None:
     key = load_answer_key()
 
@@ -157,7 +157,6 @@ def test_each_listed_account_matches_the_answer_key(tmp_path: Path) -> None:
     assert observed == key.accounts
 
 
-@pytest.mark.xfail(strict=True, raises=NotImplementedError)
 def test_every_other_account_gets_the_default_outcome(tmp_path: Path) -> None:
     key = load_answer_key()
 

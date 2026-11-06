@@ -4,6 +4,8 @@ Times are stored as ISO-8601 UTC text with microseconds, so they sort as text. T
 here rather than by sqlite3's datetime adapters, which are deprecated.
 """
 
+import hashlib
+import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import closing, contextmanager
@@ -11,9 +13,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, NewType, TypeAlias
+from typing import Literal, NewType, TypeAlias, assert_never
 
-from mule_triage.contracts import AccountProfile, Payment
+from mule_triage.contracts import (
+    AccountProfile,
+    AccountResult,
+    Alert,
+    NeedsReview,
+    NoAlert,
+    Payment,
+    RulesConfig,
+)
 from mule_triage.ingest import ParsedFile, Rejection
 
 RunId = NewType("RunId", int)
@@ -21,13 +31,29 @@ StoredValue: TypeAlias = str | int
 
 BUSY_TIMEOUT_SECONDS = 5.0
 CHANGED_SINCE_STORED = "changed_since_stored"
+FIRST_CASE_VERSION = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY,
     as_of TEXT NOT NULL,
     payments_received INTEGER NOT NULL,
-    profiles_received INTEGER NOT NULL
+    profiles_received INTEGER NOT NULL,
+    rules_version TEXT,
+    rules_sha256 TEXT
+);
+CREATE TABLE IF NOT EXISTS cases (
+    account_id TEXT NOT NULL,
+    as_of TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('ALERT', 'NEEDS_REVIEW', 'NO_ALERT')),
+    priority TEXT CHECK (priority IN ('HIGH', 'MEDIUM')),
+    incomplete INTEGER NOT NULL CHECK (incomplete IN (0, 1)),
+    reasons TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    changed_in_run INTEGER NOT NULL REFERENCES runs (run_id),
+    PRIMARY KEY (account_id, as_of),
+    CHECK ((outcome = 'ALERT') = (priority IS NOT NULL)),
+    CHECK (outcome = 'ALERT' OR incomplete = 0)
 );
 CREATE TABLE IF NOT EXISTS payments (
     transaction_id TEXT PRIMARY KEY,
@@ -81,6 +107,27 @@ INSERT_DUPLICATE = (
     "INSERT INTO duplicates (run_id, file, line_number, record_id) VALUES (?, ?, ?, ?)"
 )
 SELECT_DUPLICATES = "SELECT record_id FROM duplicates WHERE run_id = ? AND file = ? ORDER BY line_number"
+SELECT_PAYMENTS = (
+    "SELECT transaction_id, from_account, to_account, amount_cents, event_time,"
+    " knowledge_time, reference FROM payments ORDER BY transaction_id"
+)
+SELECT_PROFILES = (
+    "SELECT account_id, opened_at, knowledge_time FROM profiles ORDER BY account_id"
+)
+SELECT_AS_OF = "SELECT as_of FROM runs WHERE run_id = ?"
+SET_RULES = "UPDATE runs SET rules_version = ?, rules_sha256 = ? WHERE run_id = ?"
+SELECT_CASES = (
+    "SELECT account_id, outcome, priority, incomplete, reasons FROM cases"
+    " WHERE as_of = ?"
+)
+INSERT_CASE = (
+    "INSERT INTO cases (outcome, priority, incomplete, reasons, changed_in_run,"
+    " account_id, as_of, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+)
+UPDATE_CASE = (
+    "UPDATE cases SET outcome = ?, priority = ?, incomplete = ?, reasons = ?,"
+    " changed_in_run = ?, version = version + 1 WHERE account_id = ? AND as_of = ?"
+)
 
 
 class InputFile(StrEnum):
@@ -159,6 +206,29 @@ def profile_values(profile: AccountProfile) -> tuple[StoredValue, ...]:
     return (utc_text(profile.opened_at), utc_text(profile.knowledge_time))
 
 
+def settings_sha256(rules: RulesConfig) -> str:
+    """Two rules files with the same settings match, whatever their comments or layout."""
+    return hashlib.sha256(rules.model_dump_json().encode("utf-8")).hexdigest()
+
+
+def case_values(result: AccountResult) -> tuple[StoredValue | None, ...]:
+    """The fields whose change raises a case's version, as they're stored."""
+    priority: str | None
+    match result:
+        case Alert():
+            priority, incomplete = result.priority.value, result.incomplete
+        case NeedsReview() | NoAlert():
+            priority, incomplete = None, False
+        case _:
+            assert_never(result)
+    return (
+        result.outcome.value,
+        priority,
+        int(incomplete),
+        json.dumps(sorted(result.reasons)),
+    )
+
+
 @contextmanager
 def open_store(database: Path | Literal[":memory:"]) -> Iterator["SqliteStore"]:
     connection = sqlite3.connect(
@@ -229,6 +299,62 @@ class SqliteStore:
             self._file_tally(run_id, PAYMENTS, received[0]),
             self._file_tally(run_id, PROFILES, received[1]),
         )
+
+    def stored_payments(self) -> tuple[Payment, ...]:
+        rows = self._connection.execute(SELECT_PAYMENTS).fetchall()
+        return tuple(
+            Payment(
+                transaction_id=row[0],
+                from_account=row[1],
+                to_account=row[2],
+                amount_cents=row[3],
+                event_time=datetime.fromisoformat(row[4]),
+                knowledge_time=datetime.fromisoformat(row[5]),
+                reference=row[6],
+            )
+            for row in rows
+        )
+
+    def stored_profiles(self) -> tuple[AccountProfile, ...]:
+        rows = self._connection.execute(SELECT_PROFILES).fetchall()
+        return tuple(
+            AccountProfile(
+                account_id=row[0],
+                opened_at=datetime.fromisoformat(row[1]),
+                knowledge_time=datetime.fromisoformat(row[2]),
+            )
+            for row in rows
+        )
+
+    def save_outcomes(
+        self,
+        run_id: RunId,
+        rules: RulesConfig,
+        results: tuple[AccountResult, ...],
+    ) -> None:
+        """Cases are keyed by account and as-of time. A result that matches its case
+        leaves it alone, and only an ALERT or NEEDS_REVIEW opens one."""
+        found = self._connection.execute(SELECT_AS_OF, (run_id,)).fetchone()
+        if found is None:
+            raise LookupError(f"run {run_id} isn't in the run ledger")
+        as_of = found[0]
+        self._connection.execute(
+            SET_RULES, (rules.version, settings_sha256(rules), run_id)
+        )
+        stored = {
+            row[0]: tuple(row[1:])
+            for row in self._connection.execute(SELECT_CASES, (as_of,))
+        }
+        for result in results:
+            values = case_values(result)
+            previous = stored.get(result.account_id)
+            key = (run_id, result.account_id, as_of)
+            if previous is None and not isinstance(result, NoAlert):
+                self._connection.execute(
+                    INSERT_CASE, (*values, *key, FIRST_CASE_VERSION)
+                )
+            elif previous is not None and previous != values:
+                self._connection.execute(UPDATE_CASE, (*values, *key))
 
     def _admit(
         self,

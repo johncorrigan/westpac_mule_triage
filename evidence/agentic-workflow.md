@@ -75,3 +75,18 @@ The reasons for each decision are mine to add.
 | R9 | A corrected profile is rejected for ever; no schema version; `run` ignores `settings.database` when given a store; one ingest line uncovered | Open | None |
 
 The reasons for each decision are mine to add.
+
+### M4 self-review (by the building agent)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | The rules version didn't fix the thresholds: a file with `min_senders = 50` still loaded as `v1`, so `decisions.md` overclaimed replay | Fix | Each run stores a SHA-256 of the validated settings; the test failed first; claim reworded |
+| R2 | `alert_at = 4` loaded, so with three signals nothing could alert and the run still succeeded | Fix | Counts above the number of signals are refused with exit code 2; two cases failed first |
+| R3 | An account ID holding a newline or control character was accepted, and the summary prints flagged IDs as they are | Fix | Account IDs must be up to 64 letters, digits or `_ . : -`; 18 cases failed first. Closes the empty-ID part of M2's R5 |
+| R4 | A missing input file crashed with a traceback and exit code 1 | Fix | A one-line message and exit code 2; the end-to-end test failed first |
+| R5 | A re-run adds a second case per account, each at version 1 | Fix, at M4, keyed by the exact as-of time rather than the day, because the signals depend on it | A case per account and as-of time; a changed result raises the version and records the run, and a drop to NO_ALERT keeps the row; six integration tests failed first. Facts hash, reopening and audit events left for M5 |
+| R6 | The re-run test would pass if both runs returned nothing | Fix | It also checks the flagged accounts |
+| R7 | Money out before money in counts as pass-through, and an account paying itself counts as its own sender and pass-through; the README doesn't decide either | Open: mine to decide | None |
+| R8 | No test for the rule that only an ALERT row in `cases` has a priority; `--out` is accepted but unused; `min_ratio = 1` gives the error `is_instance_of`; each run loads every stored payment; `design.md` still says the pipeline raises `NotImplementedError` | Open | None |
+
+The reasons for each decision are mine to add.
