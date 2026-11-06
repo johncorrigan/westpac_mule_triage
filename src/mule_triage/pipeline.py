@@ -15,16 +15,26 @@ from mule_triage.contracts import (
     TransactionId,
 )
 from mule_triage.errors import ReconciliationError
+from mule_triage.evidence import EvidencePack, build_pack, facts_sha256
 from mule_triage.ingest import ParsedFile, parse_payments, parse_profiles, read_lines
-from mule_triage.rules import outcome_for
-from mule_triage.signals import activities, assess
-from mule_triage.store import FileTally, InputFile, RunId, RunTally, open_store
+from mule_triage.report import write_reports
+from mule_triage.signals import activities
+from mule_triage.store import (
+    CaseSnapshot,
+    CaseVersion,
+    FileTally,
+    InputFile,
+    RunId,
+    RunTally,
+    open_store,
+)
 
 
 @dataclass(frozen=True, slots=True)
 class Settings:
     database: Path
     rules: RulesConfig
+    out: Path
 
 
 class RunStore(Protocol):
@@ -49,8 +59,10 @@ class RunStore(Protocol):
         self,
         run_id: RunId,
         rules: RulesConfig,
-        results: tuple[AccountResult, ...],
+        snapshots: tuple[CaseSnapshot, ...],
     ) -> None: ...
+
+    def case_versions(self, as_of: datetime) -> tuple[CaseVersion, ...]: ...
 
 
 def run(
@@ -62,27 +74,37 @@ def run(
 ) -> RunResult:
     if store is None:
         with open_store(settings.database) as opened:
-            return triage(payments, profiles, as_of, settings.rules, opened)
-    return triage(payments, profiles, as_of, settings.rules, store)
+            return triage(payments, profiles, as_of, settings, opened)
+    return triage(payments, profiles, as_of, settings, store)
 
 
 def triage(
     payments: Path,
     profiles: Path,
     as_of: datetime,
-    rules: RulesConfig,
+    settings: Settings,
     store: RunStore,
 ) -> RunResult:
-    """Signals read every stored payment, because on a re-run every line is a duplicate."""
+    """Signals read every stored payment, because on a re-run every line is a duplicate.
+    Reports are written after the commit, for every case at this as-of time."""
     parsed_payments = parse_payments(read_lines(payments))
     parsed_profiles = parse_profiles(read_lines(profiles))
     with store.transaction():
         tally = ingest(as_of, parsed_payments, parsed_profiles, store)
-        accounts = outcomes(
-            store.stored_payments(), store.stored_profiles(), as_of, rules
+        packs = evidence_packs(
+            store.stored_payments(), store.stored_profiles(), as_of, settings.rules
         )
-        store.save_outcomes(tally.run_id, rules, accounts)
-    return run_result(tally.payments, accounts)
+        store.save_outcomes(
+            tally.run_id,
+            settings.rules,
+            tuple(CaseSnapshot(pack.result, facts_sha256(pack)) for pack in packs),
+        )
+        versions = store.case_versions(as_of)
+    by_account = {pack.account_id: pack for pack in packs}
+    write_reports(
+        settings.out, ((by_account[case.account_id], case.version) for case in versions)
+    )
+    return run_result(tally.payments, tuple(pack.result for pack in packs))
 
 
 def record_run(
@@ -106,14 +128,15 @@ def ingest(
     return tally
 
 
-def outcomes(
+def evidence_packs(
     payments: Iterable[Payment],
     profiles: Iterable[AccountProfile],
     as_of: datetime,
     rules: RulesConfig,
-) -> tuple[AccountResult, ...]:
+) -> tuple[EvidencePack, ...]:
+    """One per account, and each account's outcome comes from its pack."""
     return tuple(
-        outcome_for(activity.account_id, assess(activity, rules), rules)
+        build_pack(activity, rules)
         for activity in activities(payments, profiles, as_of, rules)
     )
 

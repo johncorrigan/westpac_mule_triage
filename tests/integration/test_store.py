@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
+from mule_triage.errors import StoreError
 from mule_triage.ingest import parse_payments, parse_profiles
-from mule_triage.store import open_store
+from mule_triage.store import SCHEMA_VERSION, open_store
 
 PAYMENT = {
     "transaction_id": "TX-101-02",
@@ -29,6 +30,29 @@ def test_opens_the_database_in_wal_mode(tmp_path: Path) -> None:
     with closing(sqlite3.connect(database)) as connection:
         mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
     assert mode == "wal"
+
+
+def test_marks_a_new_database_with_the_schema_version(tmp_path: Path) -> None:
+    database = tmp_path / "triage.db"
+
+    with open_store(database):
+        pass
+
+    with closing(sqlite3.connect(database)) as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert version == SCHEMA_VERSION
+
+
+def test_refuses_a_database_made_before_the_schema_had_a_version(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "triage.db"
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute("CREATE TABLE cases (account_id TEXT)")
+
+    with pytest.raises(StoreError, match="schema version 0"):
+        with open_store(database):
+            pass
 
 
 def test_stores_times_as_iso_8601_utc_text(tmp_path: Path) -> None:

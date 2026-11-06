@@ -19,7 +19,14 @@ from mule_triage.contracts import (
 from mule_triage.errors import ReconciliationError
 from mule_triage.ingest import ParsedFile
 from mule_triage.pipeline import Settings, record_run, run
-from mule_triage.store import RunId, RunTally, SqliteStore, open_store
+from mule_triage.store import (
+    CaseSnapshot,
+    CaseVersion,
+    RunId,
+    RunTally,
+    SqliteStore,
+    open_store,
+)
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 AS_OF_TEXT = "2026-11-03T00:00:00.000000+00:00"
@@ -108,11 +115,14 @@ class FaultyStore:
         self,
         run_id: RunId,
         rules: RulesConfig,
-        results: tuple[AccountResult, ...],
+        snapshots: tuple[CaseSnapshot, ...],
     ) -> None:
-        self.real.save_outcomes(run_id, rules, results)
+        self.real.save_outcomes(run_id, rules, snapshots)
         if self.fail_after_outcomes:
             raise sqlite3.OperationalError("disk I/O error")
+
+    def case_versions(self, as_of: datetime) -> tuple[CaseVersion, ...]:
+        return self.real.case_versions(as_of)
 
 
 def write_inputs(folder: Path, first_transaction: str) -> tuple[Path, Path]:
@@ -136,13 +146,16 @@ def dump(database: Path) -> list[str]:
 
 
 def run_golden(
-    database: Path, rules: RulesConfig, as_of: datetime = AS_OF
+    database: Path,
+    rules: RulesConfig,
+    as_of: datetime = AS_OF,
+    payments: Path = GOLDEN / "payments.jsonl",
 ) -> tuple[AccountResult, ...]:
     return run(
-        GOLDEN / "payments.jsonl",
+        payments,
         GOLDEN / "profiles.jsonl",
         as_of,
-        Settings(database, rules),
+        Settings(database, rules, database.parent / "out"),
     ).accounts
 
 
@@ -185,7 +198,10 @@ def test_a_run_that_fails_leaves_the_database_unchanged(
 
         with pytest.raises(error, match=message):
             run(
-                *inputs, AS_OF, Settings(stored_once, rules), FaultyStore(real, **fault)
+                *inputs,
+                AS_OF,
+                Settings(stored_once, rules, tmp_path / "out"),
+                FaultyStore(real, **fault),
             )
 
     assert dump(stored_once) == before
@@ -241,8 +257,45 @@ def test_a_changed_result_raises_the_version_and_records_the_run(
 
     assert stored_cases(database) == [
         ("ACC-101", AS_OF_TEXT, "ALERT", "MEDIUM", 0, NEW_PT, 2, 2),
-        ACC_105,
+        # Its outcome holds, but its pack now shows the FAN_IN threshold as 50.
+        ("ACC-105", AS_OF_TEXT, "NEEDS_REVIEW", None, 0, PT_MISSING, 2, 2),
         ("ACC-106", AS_OF_TEXT, "NEEDS_REVIEW", None, 0, PT_MISSING, 2, 2),
+    ]
+
+
+def test_one_more_payment_into_acc_101_raises_only_its_version(
+    tmp_path: Path, rules: RulesConfig
+) -> None:
+    database = tmp_path / "golden.db"
+    run_golden(database, rules)
+    more = tmp_path / "payments.jsonl"
+    extra = {
+        **PAYMENT,
+        "transaction_id": "TX-101-99",
+        "from_account": "ACC-208",
+        "event_time": "2026-11-02T11:45:00Z",
+        "knowledge_time": "2026-11-02T11:46:00Z",
+    }
+    golden = (GOLDEN / "payments.jsonl").read_text(encoding="utf-8")
+    more.write_text(golden + json.dumps(extra) + "\n", encoding="utf-8")
+
+    run_golden(database, rules, payments=more)
+
+    assert stored_cases(database) == [(*ACC_101[:6], 2, 2), ACC_105, ACC_106]
+
+
+def test_writes_a_markdown_and_a_json_pack_for_every_case(
+    tmp_path: Path, rules: RulesConfig
+) -> None:
+    database = tmp_path / "golden.db"
+
+    run_golden(database, rules)
+
+    names = sorted(path.name for path in (tmp_path / "out").iterdir())
+    assert names == [
+        f"{account}_20261103T000000Z.{suffix}"
+        for account in ("ACC-101", "ACC-105", "ACC-106")
+        for suffix in ("json", "md")
     ]
 
 

@@ -12,7 +12,7 @@ from mule_triage.cli import (
     main,
 )
 from mule_triage.contracts import RulesConfig, RunResult
-from mule_triage.errors import ReconciliationError, RulesError
+from mule_triage.errors import ReconciliationError, RulesError, StoreError
 from mule_triage.pipeline import Settings
 
 RULES_V1 = Path(__file__).resolve().parents[2] / "rules" / "rules-v1.toml"
@@ -29,6 +29,12 @@ def unbalanced(
     payments: Path, profiles: Path, as_of: datetime, settings: Settings
 ) -> RunResult:
     raise ReconciliationError("payments: received 3 lines, but stored 2")
+
+
+def old_database(
+    payments: Path, profiles: Path, as_of: datetime, settings: Settings
+) -> RunResult:
+    raise StoreError("triage.db: has schema version 0, not 1")
 
 
 def run_args(tmp_path: Path, rules: Path) -> list[str]:
@@ -84,6 +90,7 @@ def test_loads_rules_v1_with_the_readmes_thresholds() -> None:
             "pass_through": {"min_ratio": Decimal("0.80"), "max_hours": 12},
             "new_account": {"younger_than_days": 30},
             "outcome": {"alert_at": 2, "high_priority_at": 3},
+            "evidence": {"max_counterparties": 5},
         }
     )
 
@@ -95,6 +102,7 @@ def test_loads_rules_v1_with_the_readmes_thresholds() -> None:
         (("min_senders = 5", 'min_senders = "5"'), "int_type"),
         (("min_ratio = 0.80", "min_ratio = 0"), "is_instance_of"),
         (("max_hours = 12", "max_hours = 0"), "greater_than"),
+        (("max_counterparties = 5", "max_counterparties = 0"), "greater_than_equal"),
         (("younger_than_days = 30\n", ""), "missing"),
         (("high_priority_at = 3", "high_priority_at = 1"), "value_error"),
         (("[fan_in]", "[fan_in"), "isn't valid TOML"),
@@ -112,6 +120,7 @@ def test_loads_rules_v1_with_the_readmes_thresholds() -> None:
         "text for a number",
         "a whole number for the ratio",
         "zero hours",
+        "no counterparties",
         "missing setting",
         "high priority below an alert",
         "invalid TOML",
@@ -158,6 +167,15 @@ def test_a_run_that_doesnt_reconcile_exits_with_the_reconciliation_code(
 
     assert exit_code == ExitCode.RECONCILIATION_FAILED
     assert "payments: received 3 lines" in capsys.readouterr().err
+
+
+def test_a_database_with_another_schema_exits_with_the_usage_error_code(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    exit_code = main(run_args(tmp_path, RULES_V1), run=old_database)
+
+    assert exit_code == ExitCode.USAGE_ERROR
+    assert "schema version 0" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(

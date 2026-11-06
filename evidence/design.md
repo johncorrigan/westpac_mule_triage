@@ -53,6 +53,28 @@ Before committing, `pipeline.reconcile` checks per file that the lines read, as 
 ledger, equal the run's stored accepted, rejected and duplicate rows, and otherwise raises
 `ReconciliationError`, which rolls the whole run back.
 
+## Evidence pack
+
+Written at M5a. `evidence.build_pack` (layer 4) is a pure function of one account's activity
+and the rules. It takes the outcome from `rules.outcome_for` and the numbers from `signals.py`'s
+own measures, so the pipeline's results come from the packs and can't disagree with them. Every
+fact has an ID taken from its record (`P-TX-101-01`, `PR-ACC-101`, `S-FAN_IN`), a source, a record
+ID, and an event time and a knowledge time in UTC. A signal's source is `rules v1`, and its times
+are the as-of time. A ratio is rounded down and hours are rounded up, so a value just short of a
+threshold never looks as if it reached it (`tests/unit/test_evidence.py`). Counterparties are
+ranked by total in both directions, then by account ID, and capped by `[evidence]
+max_counterparties`, which limits only that list. The facts' JSON is canonical, and its SHA-256
+is stored on the case, so the version rises when a reviewer would see different facts. That
+includes a changed threshold, even when the outcome holds. The hash covers exact values (cents,
+the exact ratio, microseconds and the thresholds) and codes, never the wording or the rounding,
+so rewording a label changes no case. Payment references are kept in full, as quoted data,
+because an investigator needs them; they're free text and may hold a name, so the packs, and
+from M6 the model's input, can carry personal data. `report.py` (layer 6) writes
+`<account>_<as-of>.md` and `.json` under `--out` for every case at the run's as-of time, after the
+commit. In Markdown every ID and reference is inline code, and the pack uses lists, because a pipe
+would split a table cell. The store's schema now has a version, and an older database is refused
+with a message rather than failing on a missing column.
+
 ## The four boundaries
 
 | Boundary | What happens there | Who owns it |

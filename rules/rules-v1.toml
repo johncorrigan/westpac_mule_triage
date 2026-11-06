@@ -24,3 +24,8 @@ younger_than_days = 30
 # breach, counting each Unknown as breaching.
 alert_at = 2
 high_priority_at = 3
+
+[evidence]
+# The evidence pack lists at most this many counterparties, and says how many it left out. It
+# changes no outcome, and never limits the facts.
+max_counterparties = 5

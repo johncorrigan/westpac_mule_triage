@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from mule_triage import pipeline
 from mule_triage.contracts import Alert, NoAlert, Outcome, RulesConfig, RunResult
-from mule_triage.errors import ReconciliationError, RulesError
+from mule_triage.errors import ReconciliationError, RulesError, StoreError
 from mule_triage.pipeline import Settings
 from mule_triage.rules import unreachable_settings
 
@@ -125,10 +125,14 @@ def main(argv: Sequence[str] | None = None, run: Runner = pipeline.run) -> int:
         return ExitCode.USAGE_ERROR
     try:
         args.db.parent.mkdir(parents=True, exist_ok=True)
-        result = run(args.payments, args.profiles, args.as_of, Settings(args.db, rules))
+        settings = Settings(args.db, rules, args.out)
+        result = run(args.payments, args.profiles, args.as_of, settings)
     except ReconciliationError as error:
         print(f"mule_triage: nothing was stored: {error}", file=sys.stderr)
         return ExitCode.RECONCILIATION_FAILED
+    except StoreError as error:
+        print(f"mule_triage: {error}", file=sys.stderr)
+        return ExitCode.USAGE_ERROR
     except OSError as error:
         print(f"mule_triage: {error.filename}: {error.strerror}", file=sys.stderr)
         return ExitCode.USAGE_ERROR

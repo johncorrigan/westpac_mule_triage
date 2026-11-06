@@ -90,3 +90,22 @@ The reasons for each decision are mine to add.
 | R8 | No test for the rule that only an ALERT row in `cases` has a priority; `--out` is accepted but unused; `min_ratio = 1` gives the error `is_instance_of`; each run loads every stored payment; `design.md` still says the pipeline raises `NotImplementedError` | Open | None |
 
 The reasons for each decision are mine to add.
+
+### M5a self-review (by the building agent)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | Money out before any came in breached pass-through, because a negative span counts as "at most 12 hours" | Fix | The span must be 0 or more, and the pack shows "from 0 to 12"; the test failed first; no golden outcome changed. Closes that part of M4's R7 |
+| R2 | The facts hash covered labels and rounded values, so rewording a label would raise every case's version, stale every disposition and, at M6, break every recording | Fix | The hash covers exact values and codes only; two tests failed first |
+| R3 | References are copied in full, and free text may hold a name | Keep in full, as quoted data | The risk is noted in `design.md` |
+| R4 | Rounding a ratio down misleads when the threshold has more than two decimal places | Open | None |
+| R5 | The threshold wording in `evidence.py` is separate from the comparisons in `signals.py`, and no test ties them together | Open | None |
+| R6 | Pack file names collide for account IDs that differ only in case (macOS, Windows), `:` is invalid on Windows, and as-of times within one second share a name | Open | None |
+| R7 | Packs are written after the commit: a failed write exits 2 without saying the run was stored, and two concurrent runs can leave a file behind the database | Open | None |
+| R8 | Refusing an old database switches it to WAL first | Open | None |
+| R9 | No test ties the hash stored on the case to the pack file's `facts_sha256` | Open | None |
+| R10 | Untested: a payment to itself, and an empty ID, which renders as literal backticks | Open | None |
+
+Found at M5a before the review, and fixed: a database made before M5a crashed the run on the missing `facts_sha256` column, so the schema now has a version and an older database is refused; and the end-to-end test wrote packs into the repository's `out/`.
+
+The reasons for each decision are mine to add.

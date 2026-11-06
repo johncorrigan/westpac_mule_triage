@@ -91,6 +91,12 @@ class OutcomeRule(BaseModel):
         return self
 
 
+class EvidenceRule(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    max_counterparties: int = Field(ge=1)
+
+
 class RulesConfig(BaseModel):
     """Read from TOML with floats as `Decimal`, so a ratio of 0.80 is exactly 4/5."""
 
@@ -102,6 +108,7 @@ class RulesConfig(BaseModel):
     pass_through: PassThroughRule
     new_account: NewAccountRule
     outcome: OutcomeRule
+    evidence: EvidenceRule
 
 
 class ReasonCode(StrEnum):

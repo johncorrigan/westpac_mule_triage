@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Literal, NewType, TypeAlias, assert_never
 
 from mule_triage.contracts import (
+    AccountId,
     AccountProfile,
     AccountResult,
     Alert,
@@ -24,6 +25,7 @@ from mule_triage.contracts import (
     Payment,
     RulesConfig,
 )
+from mule_triage.errors import StoreError
 from mule_triage.ingest import ParsedFile, Rejection
 
 RunId = NewType("RunId", int)
@@ -32,8 +34,13 @@ StoredValue: TypeAlias = str | int
 BUSY_TIMEOUT_SECONDS = 5.0
 CHANGED_SINCE_STORED = "changed_since_stored"
 FIRST_CASE_VERSION = 1
+# Raised with every schema change; SCHEMA sets it, as PRAGMA takes no placeholders.
+SCHEMA_VERSION = 1
+SELECT_SCHEMA_VERSION = "PRAGMA user_version"
+COUNT_TABLES = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'"
 
 SCHEMA = """
+PRAGMA user_version = 1;
 CREATE TABLE IF NOT EXISTS runs (
     run_id INTEGER PRIMARY KEY,
     as_of TEXT NOT NULL,
@@ -49,6 +56,7 @@ CREATE TABLE IF NOT EXISTS cases (
     priority TEXT CHECK (priority IN ('HIGH', 'MEDIUM')),
     incomplete INTEGER NOT NULL CHECK (incomplete IN (0, 1)),
     reasons TEXT NOT NULL,
+    facts_sha256 TEXT NOT NULL,
     version INTEGER NOT NULL,
     changed_in_run INTEGER NOT NULL REFERENCES runs (run_id),
     PRIMARY KEY (account_id, as_of),
@@ -117,16 +125,20 @@ SELECT_PROFILES = (
 SELECT_AS_OF = "SELECT as_of FROM runs WHERE run_id = ?"
 SET_RULES = "UPDATE runs SET rules_version = ?, rules_sha256 = ? WHERE run_id = ?"
 SELECT_CASES = (
-    "SELECT account_id, outcome, priority, incomplete, reasons FROM cases"
+    "SELECT account_id, outcome, priority, incomplete, reasons, facts_sha256 FROM cases"
     " WHERE as_of = ?"
 )
+SELECT_CASE_VERSIONS = (
+    "SELECT account_id, version FROM cases WHERE as_of = ? ORDER BY account_id"
+)
 INSERT_CASE = (
-    "INSERT INTO cases (outcome, priority, incomplete, reasons, changed_in_run,"
-    " account_id, as_of, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO cases (outcome, priority, incomplete, reasons, facts_sha256,"
+    " changed_in_run, account_id, as_of, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
 )
 UPDATE_CASE = (
     "UPDATE cases SET outcome = ?, priority = ?, incomplete = ?, reasons = ?,"
-    " changed_in_run = ?, version = version + 1 WHERE account_id = ? AND as_of = ?"
+    " facts_sha256 = ?, changed_in_run = ?, version = version + 1"
+    " WHERE account_id = ? AND as_of = ?"
 )
 
 
@@ -185,6 +197,20 @@ class RunTally:
     profiles: FileTally
 
 
+@dataclass(frozen=True, slots=True)
+class CaseSnapshot:
+    """What a case's reviewer sees: its result, and the hash of its evidence pack's facts."""
+
+    result: AccountResult
+    facts_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class CaseVersion:
+    account_id: AccountId
+    version: int
+
+
 def utc_text(moment: datetime) -> str:
     if moment.tzinfo is None:
         raise ValueError("only a timezone-aware time can be stored")
@@ -211,8 +237,9 @@ def settings_sha256(rules: RulesConfig) -> str:
     return hashlib.sha256(rules.model_dump_json().encode("utf-8")).hexdigest()
 
 
-def case_values(result: AccountResult) -> tuple[StoredValue | None, ...]:
+def case_values(snapshot: CaseSnapshot) -> tuple[StoredValue | None, ...]:
     """The fields whose change raises a case's version, as they're stored."""
+    result = snapshot.result
     priority: str | None
     match result:
         case Alert():
@@ -226,6 +253,7 @@ def case_values(result: AccountResult) -> tuple[StoredValue | None, ...]:
         priority,
         int(incomplete),
         json.dumps(sorted(result.reasons)),
+        snapshot.facts_sha256,
     )
 
 
@@ -237,6 +265,13 @@ def open_store(database: Path | Literal[":memory:"]) -> Iterator["SqliteStore"]:
     with closing(connection):
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA foreign_keys = ON")
+        version = connection.execute(SELECT_SCHEMA_VERSION).fetchone()[0]
+        tables = connection.execute(COUNT_TABLES).fetchone()[0]
+        if tables and version != SCHEMA_VERSION:
+            raise StoreError(
+                f"{database}: has schema version {version}, not {SCHEMA_VERSION};"
+                " use a new --db or delete it"
+            )
         connection.executescript(SCHEMA)
         yield SqliteStore(connection)
 
@@ -330,9 +365,9 @@ class SqliteStore:
         self,
         run_id: RunId,
         rules: RulesConfig,
-        results: tuple[AccountResult, ...],
+        snapshots: tuple[CaseSnapshot, ...],
     ) -> None:
-        """Cases are keyed by account and as-of time. A result that matches its case
+        """Cases are keyed by account and as-of time. A snapshot that matches its case
         leaves it alone, and only an ALERT or NEEDS_REVIEW opens one."""
         found = self._connection.execute(SELECT_AS_OF, (run_id,)).fetchone()
         if found is None:
@@ -345,16 +380,21 @@ class SqliteStore:
             row[0]: tuple(row[1:])
             for row in self._connection.execute(SELECT_CASES, (as_of,))
         }
-        for result in results:
-            values = case_values(result)
-            previous = stored.get(result.account_id)
-            key = (run_id, result.account_id, as_of)
-            if previous is None and not isinstance(result, NoAlert):
+        for snapshot in snapshots:
+            values = case_values(snapshot)
+            account_id = snapshot.result.account_id
+            previous = stored.get(account_id)
+            key = (run_id, account_id, as_of)
+            if previous is None and not isinstance(snapshot.result, NoAlert):
                 self._connection.execute(
                     INSERT_CASE, (*values, *key, FIRST_CASE_VERSION)
                 )
             elif previous is not None and previous != values:
                 self._connection.execute(UPDATE_CASE, (*values, *key))
+
+    def case_versions(self, as_of: datetime) -> tuple[CaseVersion, ...]:
+        rows = self._connection.execute(SELECT_CASE_VERSIONS, (utc_text(as_of),))
+        return tuple(CaseVersion(AccountId(row[0]), row[1]) for row in rows)
 
     def _admit(
         self,

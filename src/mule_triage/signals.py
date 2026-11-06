@@ -112,11 +112,13 @@ def fan_in_breaches(senders: int, rules: RulesConfig) -> bool:
 
 
 def pass_through_breaches(measured: PassThrough, rules: RulesConfig) -> bool:
+    """The last payment out must come after the first payment in: money that left before any
+    arrived isn't passed through."""
     if measured.ratio is None or measured.span is None:
         return False
     limits = rules.pass_through
-    return measured.ratio >= Fraction(limits.min_ratio) and measured.span <= timedelta(
-        hours=limits.max_hours
+    return measured.ratio >= Fraction(limits.min_ratio) and (
+        timedelta(0) <= measured.span <= timedelta(hours=limits.max_hours)
     )
 
 

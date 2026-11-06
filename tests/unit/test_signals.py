@@ -209,8 +209,16 @@ def test_fan_in_breaches_from_five_senders(
         (8000, timedelta(hours=12), True),
         (7999, timedelta(hours=1), False),
         (8000, timedelta(hours=12, seconds=1), False),
+        (8000, timedelta(0), True),
+        (8000, -timedelta(hours=12), False),
     ],
-    ids=["exactly 0.80 within exactly 12 hours", "just under 0.80", "just over 12h"],
+    ids=[
+        "exactly 0.80 within exactly 12 hours",
+        "just under 0.80",
+        "just over 12h",
+        "out at the moment money came in",
+        "out 12 hours before money came in",
+    ],
 )
 def test_pass_through_breaches_at_0_80_within_12_hours(
     rules: RulesConfig, sent_cents: int, last_out: timedelta, breach: bool
