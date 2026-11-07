@@ -181,3 +181,28 @@ sentence, and the NARRATIVE payload held `"reply":null`.
 | R1, open part | The pack files under `--out` have no narrative, and on a re-run an unchanged case would need it read from its stored event | Open: out of R's scope | None |
 | R1, open part | `intent.md` claims every alert has a checked first-draft narrative | Open: reworded at M8 | None |
 | R1, open part | `dispose` accepts `--narrative ACCEPTED` or `EDITED` when the case's current version has no AI draft, and doesn't record which NARRATIVE event the reviewer saw | Deferred: it should refuse those two values in that case, and record the event | None |
+
+## Tally (M8)
+
+Counted from `git log`, and from `.git/cursor-guard/controls.log`, which Git doesn't track.
+
+**Commits:** 24 in all. 16 carry an `Assisted-by:` trailer that Git reads: 15 say
+`Cursor (Claude Opus 5.5)`, and the last, `9baf9bd`, says only `Cursor`. 8 have none: the three
+set-up commits before the plan, the golden answer key and its priorities, the M5 plan split, the
+recorded replies, and the subpackage move `0faead0`, whose body has "Me and Assisted-by: Cursor
+(Claude Opus 5.5)" inside a sentence, so Git doesn't read it as a trailer.
+
+**Guard log:** six entries, three approval requests and three blocks. None was an attempt to
+change a protected file.
+
+| Rule | Decision | Count | What it was |
+| --- | --- | --- | --- |
+| `install` | ask | 3 | At M1, the agent's first install, unpinned so `pip freeze` could write `constraints.txt`, then the README's four steps run by hand; at M8, an `rg` search of a past chat for that install command. The log keeps the request, not my answer; all three ran |
+| `recordings` | deny | 2 | At M6, a read-only Python check of the recorded replies; at M8, a script reading a past chat whose text held the same path. The guard treats any `python` command that names the path as a possible write. Neither agent went round it |
+| `kit` | deny | 1 | At M8, `sed -n` printing lines of `.cursor/hooks/guard.py`; the guard treats `sed` as a possible writer |
+
+No other rule fired: no commit was refused for its trailer, its checks or uncommitted
+human-owned files.
+
+**The guard's own tests:** `python3 .cursor/hooks/guard_tests.py`, run by me at M8, because the
+guard stops the agent running them: `CASES: 113  FAILURES: 0`.

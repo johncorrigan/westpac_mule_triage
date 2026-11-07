@@ -14,7 +14,7 @@ Break.
 - [x] **M6** (1:50-2:20, 30 min) AI case narrative. **Done when** the replay gates pass, every bad reply falls back with its reason, and an unreachable model degrades the run. **Needs from me:** the recordings under `tests/ai/recorded/`, made with Ollama from the command I'm given, and committed by me. Evidence: `decisions.md`, `operate.md`.
 - [x] **M7** (2:20-2:30, 10 min) Run summary and smoke test, with the JSON log format. **Done when** the end-to-end smoke test passes and checks the run summary's counts, a test shows each log record is one line of JSON, and two deliberate bugs each turn `verify.py` red. Evidence: `verify.md`, `operate.md`.
 - [x] **R** (2:30-2:40, 10 min) Full-diff review by a different model family, then fixes for the findings I accept. **Done when** every finding is answered and recorded in `evidence/agentic-workflow.md`, and `verify.py` is green. **Needs from me:** the review, run with `/adversarial-review` in a separate chat, and my decision on each finding. Evidence: `agentic-workflow.md`.
-- [ ] **M8** (2:40-2:50, 10 min) Documents. **Done when** every evidence file is edited and the final `verify.py` is green. Evidence: all six files, and `README.md`.
+- [x] **M8** (2:40-2:50, 10 min) Documents. **Done when** every evidence file is edited and the final `verify.py` is green. Evidence: all six files, and `README.md`.
 
 Buffer (2:50-3:00, 10 min), for overruns only.
 
