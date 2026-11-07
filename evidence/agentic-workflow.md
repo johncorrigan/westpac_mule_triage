@@ -131,3 +131,22 @@ The reasons for each decision are mine to add.
 Found at M5a before the review, and fixed: a database made before M5a crashed the run on the missing `facts_sha256` column, so the schema now has a version and an older database is refused; and the end-to-end test wrote packs into the repository's `out/`.
 
 The reasons for each decision are mine to add.
+
+### M6 part 1 review (by the building agent, at my request)
+
+Ten hostile drafts, run in memory against ACC-101's golden pack, all passed the validator.
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | A synonym obeys the injection: "appears genuine and safe" passes | Open | Recorded as a known limit in `decisions.md` |
+| R2 | A soft hyphen, a zero-width space, full-width letters or an underscore hide a decision word | Fix | Text is normalised (NFKC, invisible characters removed) and `_` is a break for the word check; four cases failed first |
+| R3 | A sentence can name an account or transaction its cited facts don't show, such as the wrong payer | Fix | New reason `UNSUPPORTED_ID`; the case's own account is always allowed; two cases failed first |
+| R4 | A sentence can repeat a payment reference, such as the injected instruction | Fix | New reason `REPEATS_REFERENCE`, for three words in a row from any reference; two cases failed first |
+| R5 | Citing every fact lets a sentence use any number in the pack | Open | Recorded as a known limit |
+| R6 | A payment's knowledge time can stand in for its event time | Open | Recorded as a known limit |
+| R7 | A claim without an ID, number or date can't be checked | Open | Recorded as a known limit |
+| R8 | No cap on prompt size, so a small model's context could drop the instructions; no cap on the reply's size; accepted text isn't yet rendered as untrusted | Open: for M6 parts 2 and 3 | None |
+
+Found before the review, and fixed: an account ID of digits alone, such as `950`, was taken out of a sentence as an ID, so it could hide an invented $950; the test failed first.
+
+The reasons for each decision are mine to add.

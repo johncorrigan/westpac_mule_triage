@@ -18,7 +18,9 @@ flowchart TD
     L2 --> L1["1: contracts, errors, clock"]
 ```
 
-At M5b every module but `narrative.py` (M6) and `generate.py` (G) exists. The core is pure:
+At M5b every module but `narrative.py` (M6) and `generate.py` (G) exists. At M6 the narrative
+became a sub-package, `narrative/`, whose modules all sit in layer 4: `prompt.py`,
+`validator.py` and `template.py` are pure. The core is pure:
 `signals`, `rules` and `evidence` compute from records they're given. The edges are the store,
 the audit log, the report files and the command line. `cli.py` is the composition root: it builds
 the real implementations, including the wall clock, and passes them in, and it's the only module

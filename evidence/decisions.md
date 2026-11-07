@@ -34,3 +34,27 @@ Each entry gives the decision, why, and what it costs. Written at the milestone 
   thresholds and isn't flagged, by design of the scenario. NEEDS_REVIEW adds work for
   investigators, one case per account without a profile that has one breach. Thresholds are
   judgement, not tuned on data: the rules evaluation metric in `intent.md` is still TBD.
+
+## A strict validator and a template, not trust in the model (M6)
+
+- **Decision:** the model's draft is used only if `narrative/validator.py` accepts it;
+  otherwise, and always for NEEDS_REVIEW, the reviewer gets a template built from the facts,
+  with "no AI draft: write this one manually" and the reasons. The prompt (`narrative-v1`)
+  gives the model only this case's facts, as JSON lines in a `<facts>` block with `<` and `>`
+  escaped, so a reference can't close the block (`tests/unit/narrative/test_prompt.py`).
+- **Why:** each check is a value comparison a reviewer can repeat. Every sentence must cite
+  facts in the pack; the IDs it names must be in those facts, its numbers must appear in them
+  by value, and its dates exactly. Whole-word decision terms, such as "legitimate", reject it,
+  after look-alike and invisible characters are normalised, and so do three words in a row
+  from any payment reference. A draft that obeys the golden injection is rejected
+  (`tests/unit/narrative/test_validator.py`). A reference never supports a number, because the payer
+  wrote it.
+- **Cost:** some true sentences fail: a total such as $6,300.00, "09:00" or "2 November 2026",
+  a listed word used innocently, such as "closed", and a common phrase that a reference
+  happens to hold, such as "this account is" from the golden injection.
+- **Known limits, not checked (M6 self-review):** a synonym of a decision word, such as
+  "genuine" or "safe"; Cyrillic or other look-alike letters, which NFKC doesn't map; a
+  sentence that cites every fact can use any number in the pack; a payment's knowledge time
+  can stand in for its event time; spelled-out numbers; whether a number plays the role the
+  sentence gives it; and any claim without an ID, number or date, such as "moved the money
+  overseas". The reviewer reads the draft beside the pack.
