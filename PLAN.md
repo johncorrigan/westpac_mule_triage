@@ -37,3 +37,5 @@ The review can shrink to five minutes, with its findings recorded rather than fi
 ## Cuts
 
 - CI (M1): optional, nice to have, and not coming in this build, so M1's check no longer includes it. Reason: my decision; `verify.py`, run locally, is the definition of done.
+- Rules evaluation metric (`intent.md`, success criteria): nothing scores the rules beyond the golden acceptance test. Reason: my decision; the only labelled data is the golden day, which was written around rules v1, and there's no time to label another.
+- AI narrative evaluation metric (`intent.md`, success criteria): the drafts get no pass mark, M6's checks stay as they are, and N stays optional with its check unchanged. Reason: my decision.

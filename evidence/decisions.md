@@ -33,7 +33,8 @@ Each entry gives the decision, why, and what it costs. Written at the milestone 
 - **Cost:** rules this simple can be gamed. ACC-102 stays one sender and 0.05 of a ratio under the
   thresholds and isn't flagged, by design of the scenario. NEEDS_REVIEW adds work for
   investigators, one case per account without a profile that has one breach. Thresholds are
-  judgement, not tuned on data: the rules evaluation metric in `intent.md` is still TBD.
+  judgement, not tuned on data, and nothing scores them beyond the golden day: the rules
+  evaluation metric was cut (`PLAN.md`, Cuts).
 
 ## AI drafts, people decide (M6)
 

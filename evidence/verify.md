@@ -48,7 +48,7 @@ verify: passed, with 1 gate(s) skipped
 
 A smoke test of real output, not a measured rate: only the two golden alerts, ACC-101 and
 ACC-106, get drafts, and ACC-105, as NEEDS_REVIEW, gets the template without asking the model.
-The AI narrative metric in `intent.md` is still TBD.
+The reading has no pass mark: the AI narrative metric was cut (`PLAN.md`, Cuts).
 
 - **Model:** `granite3.3:8b`, digest
   `fd429f23b90980ed1bef53b990894e7b0199331f6ae90c5650240a7d5b70f1f7`, with prompt `narrative-v1`,

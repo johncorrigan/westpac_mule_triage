@@ -66,10 +66,9 @@ committed recordings, so no test needs a model.
 - `python scripts/verify.py` is green, with every gate on.
 - The golden acceptance test passes against my answer key.
 - Every alert's evidence pack and narrative meet the checks in `PLAN.md`, M5 and M6.
-- **Rules evaluation:** metric and threshold to be set by me: [TBD].
-- **AI narrative evaluation:** metric and threshold to be set by me: [TBD].
 
-`PLAN.md` doesn't yet have a milestone that measures the two evaluations.
+No criterion scores the rules or the AI narrative against a threshold: both evaluation metrics
+were cut (`PLAN.md`, Cuts).
 
 ## The golden scenario
 
