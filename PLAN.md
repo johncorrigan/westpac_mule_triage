@@ -22,6 +22,7 @@ If time allows, only once M1-M7 are committed and never after 2:30, in this orde
 
 - [ ] **T** The threaded concurrency test. **Done when** exactly one of two concurrent reviewers wins. Evidence: `design.md`.
 - [ ] **G** The generator on one seed. **Done when** the same seed gives the same output, and a full run on that output completes. Evidence: `verify.md`.
+- [ ] **N** Prompt `narrative-v2` (added at M6: both `granite3.3:8b` drafts for `narrative-v1` fail the validator, and a `llama` draft passed it with factual errors). **Done when** both golden alerts' recorded drafts pass the validator, a person finds no factual error in either, and the accepted-but-wrong `llama` draft is a failing hand-written test that the validator or the prompt now handles. Evidence: `decisions.md`, `agentic-workflow.md`.
 
 From 2:30, no new features: only fixes for review findings I accept. From 2:40, documents only.
 
