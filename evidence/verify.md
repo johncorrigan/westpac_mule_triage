@@ -40,6 +40,30 @@ smoke            PASS        0.1  python -m mule_triage --help
 verify: passed, with 1 gate(s) skipped
 ```
 
+## Live evaluation of the narrative (M6)
+
+A smoke test of real output, not a measured rate: only the two golden alerts, ACC-101 and
+ACC-106, get drafts, and ACC-105, as NEEDS_REVIEW, gets the template without asking the model.
+The AI narrative metric in `intent.md` is still TBD.
+
+- **Model:** `granite3.3:8b`, digest
+  `fd429f23b90980ed1bef53b990894e7b0199331f6ae90c5650240a7d5b70f1f7`, with prompt `narrative-v1`,
+  temperature 0, seed 42 and `num_ctx` 8192. I recorded both replies with `--ai live --record`,
+  read them and committed them (`tests/ai/recorded/`).
+- **Acceptance:** 0 of 2 drafts. By sentence, 4 of 11 have no problem: 2 of ACC-101's 6, and 2
+  of ACC-106's 5. Both cases get the template with the validator's reasons, and the run exits 0.
+- **Rejection reasons:** 10 `UNSUPPORTED_DATE` and 4 `UNSUPPORTED_NUMBER`, 5 and 2 for each case;
+  no other reason. Four are real errors: ACC-101's "$4500" received (the facts give seven
+  payments of 900.00) and its payments out "between 09:00 and 11:30" (13:00 and 14:00); and
+  ACC-106's "received 90%" (it sent on 0.90) and "$600" sent to ACC-351 (2700.00). The rest are
+  right values in another form: "95%" for 0.95, and a date or time without the full timestamp
+  the facts show. Nothing flagged ACC-106's sentence 4, which lists four of its five payers.
+- **To repeat it:** `python -m mule_triage run tests/golden/payments.jsonl
+  tests/golden/profiles.jsonl --as-of 2026-11-03T00:00:00Z --db <new file> --out <folder>`
+  replays the recordings and prints `REJECTED: 2`; each reason is in the `NARRATIVE` audit
+  event. `tests/golden/test_recordings.py` pins the reason counts, so a new recording or a
+  changed validator must update this section.
+
 ## Where each check would run
 
 | Stage | What would run there |
