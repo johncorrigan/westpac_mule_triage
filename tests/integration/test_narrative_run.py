@@ -1,5 +1,7 @@
 import json
+import logging
 import socket
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -15,14 +17,17 @@ from mule_triage.contracts import (
     RulesConfig,
 )
 from mule_triage.evidence import EvidencePack, facts_sha256
+from mule_triage.logs import FIELDS
 from mule_triage.narrative.client import (
+    Drafted,
+    DraftResult,
     DraftSource,
     ModelLabel,
     Recording,
     ReplayClient,
     write_recording,
 )
-from mule_triage.narrative.prompt import PROMPT_VERSION
+from mule_triage.narrative.prompt import PROMPT_VERSION, Prompt
 from mule_triage.pipeline import Settings, run
 from mule_triage.records.store import open_store
 
@@ -107,10 +112,11 @@ def test_the_run_command_replays_recordings_by_default(
     exit_code = main(args, clock=CLOCK)
 
     assert exit_code == ExitCode.SUCCESS
-    assert (
-        "narratives: AI_DRAFT: 1, AI_OFF: 0, NEEDS_REVIEW: 1, NO_RECORDING: 1,"
-        in capsys.readouterr().out
-    )
+    assert capsys.readouterr().out.splitlines()[8:10] == [
+        "narratives: 1 drafted, 1 accepted",
+        "fallen back: AI_OFF: 0, NEEDS_REVIEW: 1, NO_RECORDING: 1, AI_UNAVAILABLE: 0,"
+        " REJECTED: 0",
+    ]
 
 
 def test_an_unreachable_model_degrades_the_run_and_still_stores_it(
@@ -193,6 +199,38 @@ def test_a_missing_recording_falls_back_to_the_template_and_is_counted(
     }
     reasons = narrative_events(database)["ACC-101"]["reasons"]
     assert isinstance(reasons, list) and reasons[0].startswith("NO_RECORDING: ")
+
+
+@dataclass(frozen=True, slots=True)
+class TimedClient:
+    """Answers every prompt with REPLY, as a live call that took 3.456 seconds."""
+
+    def draft(self, prompt: Prompt, facts_sha256: str) -> DraftResult:
+        label = ModelLabel(DEFAULT_MODEL, "sha256:5f2a9c", DraftSource.LIVE)
+        return Drafted(REPLY, label, latency_seconds=3.456)
+
+
+def test_each_live_calls_latency_is_logged_without_its_account(
+    tmp_path: Path, rules: RulesConfig, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO, logger="mule_triage")
+
+    run(
+        GOLDEN / "payments.jsonl",
+        GOLDEN / "profiles.jsonl",
+        AS_OF,
+        Settings(tmp_path / "triage.db", rules, tmp_path / "out", CLOCK, TimedClient()),
+    )
+
+    calls = [
+        getattr(record, FIELDS)
+        for record in caplog.records
+        if record.getMessage() == "model_call"
+    ]
+    assert calls == [
+        {"run_id": 1, "outcome": "AI_DRAFT", "seconds": 3.456},
+        {"run_id": 1, "outcome": "REJECTED", "seconds": 3.456},
+    ]
 
 
 def test_a_rerun_that_changes_no_case_drafts_no_narrative(

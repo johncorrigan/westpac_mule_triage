@@ -15,7 +15,7 @@ flowchart TD
     L5 --> L4["4: evidence, narrative/"]
     L4 --> L3["3: detection/ (signals, rules)"]
     L3 --> L2["2: records/ (ingest, store)"]
-    L2 --> L1["1: contracts, errors, clock"]
+    L2 --> L1["1: contracts, errors, clock, logs"]
 ```
 
 At M5b every module but `narrative.py` (M6) and `generate.py` (G) exists. At M6 the narrative
@@ -26,7 +26,10 @@ no logic change, `ingest` and `store` moved into `records/`, `signals` and `rule
 layer map names the sub-package, and a test planting an import from `decision` in
 `detection/signals.py` turns it red. `contracts`, `errors` and `clock` stay at the top because
 every layer imports them, `evidence` stays beside `narrative/`, and so do `report`, `pipeline`
-and `cli`. The core is pure:
+and `cli`. At M7, `logs.py` joined layer 1: `pipeline` logs each event through its
+`log_event`, and `cli` writes every record to stderr through its `JsonLines` formatter, as one
+line of JSON naming the event and the run. `cli` also builds the run summary, prints it and
+saves it as `run_summary.json` under `--out`. The core is pure:
 `signals`, `rules` and `evidence` compute from records they're given. The edges are the store,
 the audit log, the report files and the command line. `cli.py` is the composition root: it builds
 the real implementations, including the wall clock, and passes them in, and it's the only module
@@ -152,9 +155,12 @@ that changes no case drafts none.
 - Minimisation: a pack holds only the payments in the signal window and the account's own
   profile, and only the facts behind the signals. References are kept in full (see the evidence
   pack, above).
-- No personal data in logs: the tool doesn't log yet (M7). The run's console summary is account
-  IDs, codes and counts, and the audit payloads hold IDs, codes and hashes only. `show` prints a
-  whole pack, references included, so like the pack files its output can hold personal data.
+- No personal data in logs: from M7 the log records hold event names, run IDs, counts, codes
+  and durations only, and a test runs the golden day and finds no account ID, transaction ID
+  or the injected reference in them. The run summary names each flagged account, with codes and
+  counts; the audit payloads hold IDs, codes, hashes and the model's raw reply, which can hold
+  personal data (see the AI boundary). `show` prints a whole pack, references included, so like
+  the pack files its output can hold personal data.
 
 ## Likely production shape
 

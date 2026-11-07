@@ -7,6 +7,7 @@ LAYERS = {
     "contracts": 1,
     "errors": 1,
     "clock": 1,
+    "logs": 1,
     "records": 2,
     "detection": 3,
     "evidence": 4,

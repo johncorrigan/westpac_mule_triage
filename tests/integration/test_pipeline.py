@@ -16,6 +16,7 @@ from mule_triage.contracts import (
     NoAlert,
     Payment,
     RulesConfig,
+    RunId,
 )
 from mule_triage.errors import ReconciliationError
 from mule_triage.records.ingest import ParsedFile
@@ -24,7 +25,6 @@ from mule_triage.records.store import (
     CaseChange,
     CaseSnapshot,
     CaseVersion,
-    RunId,
     RunTally,
     SqliteStore,
     open_store,

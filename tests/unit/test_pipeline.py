@@ -1,9 +1,10 @@
 import pytest
 
+from mule_triage.contracts import RunId
 from mule_triage.errors import ReconciliationError
 from mule_triage.records.ingest import Rejection
 from mule_triage.pipeline import reconcile
-from mule_triage.records.store import FileTally, RunId, RunTally
+from mule_triage.records.store import FileTally, RunTally
 
 REJECTED = (Rejection(2, "TX-1", "event_time: timezone_aware"),)
 BALANCED = FileTally(

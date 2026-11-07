@@ -3,11 +3,10 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from mule_triage.contracts import MAX_AMOUNT_CENTS, RulesConfig
+from mule_triage.contracts import MAX_AMOUNT_CENTS, RulesConfig, RunId
 from mule_triage.records.ingest import Rejection, parse_payments, parse_profiles
 from mule_triage.records.store import (
     FileTally,
-    RunId,
     SqliteStore,
     open_store,
     utc_text,

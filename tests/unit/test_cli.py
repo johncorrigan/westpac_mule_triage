@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -6,6 +7,8 @@ import pytest
 
 from mule_triage.cli import (
     DEFAULT_RULES,
+    EXIT_MEANINGS,
+    SUMMARY_FILE,
     ExitCode,
     Runner,
     ai_settings,
@@ -17,11 +20,19 @@ from mule_triage.contracts import (
     AccountId,
     AiMode,
     AiSettings,
+    Alert,
+    CaseCounts,
     IngestCounts,
     NarrativeOutcome,
     NarrativeSummary,
+    NeedsReview,
+    NoAlert,
+    Priority,
+    ReasonCode,
     RulesConfig,
+    RunId,
     RunResult,
+    TransactionId,
 )
 from mule_triage.errors import ReconciliationError, RulesError, StoreError
 from mule_triage.pipeline import Settings
@@ -59,6 +70,8 @@ def run_args(tmp_path: Path, rules: Path) -> list[str]:
         str(rules),
         "--db",
         str(tmp_path / "triage.db"),
+        "--out",
+        str(tmp_path / "out"),
     ]
 
 
@@ -206,13 +219,182 @@ def test_refuses_an_as_of_time_without_a_timezone(tmp_path: Path, as_of: str) ->
     assert raised.value.code == ExitCode.USAGE_ERROR
 
 
+FAN_IN, PASS_THROUGH = ReasonCode.FAN_IN, ReasonCode.PASS_THROUGH
+NEW_ACCOUNT, PROFILE_MISSING = ReasonCode.NEW_ACCOUNT, ReasonCode.PROFILE_MISSING
+
+
 def with_narratives(*narratives: NarrativeSummary) -> Runner:
     def runner(
         payments: Path, profiles: Path, as_of: datetime, settings: Settings
     ) -> RunResult:
-        return RunResult(IngestCounts(0, 0, 0, 0), (), (), (), narratives)
+        return RunResult(
+            run_id=RunId(3),
+            payment_counts=IngestCounts(35, 33, 1, 1),
+            profile_counts=IngestCounts(39, 39, 0, 0),
+            rejected_payment_ids=("TX-102-05",),
+            duplicate_payment_ids=(TransactionId("TX-102-06"),),
+            accounts=(
+                Alert(
+                    AccountId("ACC-101"),
+                    frozenset({FAN_IN, PASS_THROUGH, NEW_ACCOUNT}),
+                    Priority.HIGH,
+                    incomplete=False,
+                ),
+                NeedsReview(
+                    AccountId("ACC-105"), frozenset({PASS_THROUGH, PROFILE_MISSING})
+                ),
+                Alert(
+                    AccountId("ACC-106"),
+                    frozenset({FAN_IN, PASS_THROUGH, PROFILE_MISSING}),
+                    Priority.HIGH,
+                    incomplete=True,
+                ),
+                NoAlert(AccountId("ACC-107"), frozenset()),
+            ),
+            cases=CaseCounts(created=1, changed=1, unchanged=1),
+            narratives=narratives,
+        )
 
     return runner
+
+
+DRAFTED_AND_REJECTED = with_narratives(
+    NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.AI_DRAFT),
+    NarrativeSummary(AccountId("ACC-105"), NarrativeOutcome.NEEDS_REVIEW),
+    NarrativeSummary(AccountId("ACC-106"), NarrativeOutcome.REJECTED),
+)
+
+
+def log_records(stderr: str) -> list[dict[str, object]]:
+    return [json.loads(line) for line in stderr.splitlines() if line.startswith("{")]
+
+
+def test_prints_the_run_summary_without_times_or_durations(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = run_args(tmp_path, RULES_V1)
+
+    main(args, run=DRAFTED_AND_REJECTED)
+
+    assert capsys.readouterr().out.splitlines() == [
+        "run 3, as of 2026-11-03T00:00:00Z: rules v1, prompt narrative-v1, AI replay",
+        "payments: 35 received, 33 accepted, 1 rejected, 1 duplicates",
+        "profiles: 39 received, 39 accepted, 0 rejected, 0 duplicates",
+        "outcomes: ALERT: 2, NEEDS_REVIEW: 1, NO_ALERT: 1; INCOMPLETE alerts: 1",
+        "ACC-101 ALERT HIGH FAN_IN,NEW_ACCOUNT,PASS_THROUGH",
+        "ACC-105 NEEDS_REVIEW PASS_THROUGH,PROFILE_MISSING",
+        "ACC-106 ALERT HIGH INCOMPLETE FAN_IN,PASS_THROUGH,PROFILE_MISSING",
+        "cases: 1 created, 1 changed, 1 unchanged",
+        "narratives: 2 drafted, 1 accepted",
+        "fallen back: AI_OFF: 0, NEEDS_REVIEW: 1, NO_RECORDING: 0, AI_UNAVAILABLE: 0,"
+        " REJECTED: 1",
+        "AI_UNAVAILABLE: 0",
+        "exit code 0 (SUCCESS): the run is stored, and every case has its pack",
+    ]
+
+
+def test_saves_the_same_run_summary_as_json_under_out(tmp_path: Path) -> None:
+    args = run_args(tmp_path, RULES_V1)
+
+    main(args, run=DRAFTED_AND_REJECTED)
+
+    saved = json.loads((tmp_path / "out" / SUMMARY_FILE).read_text(encoding="utf-8"))
+    assert saved == {
+        "run_id": 3,
+        "as_of": "2026-11-03T00:00:00Z",
+        "rules_version": "v1",
+        "prompt_version": "narrative-v1",
+        "ai_mode": "replay",
+        "payments": {"received": 35, "accepted": 33, "rejected": 1, "duplicates": 1},
+        "profiles": {"received": 39, "accepted": 39, "rejected": 0, "duplicates": 0},
+        "outcomes": {"ALERT": 2, "NEEDS_REVIEW": 1, "NO_ALERT": 1},
+        "incomplete_alerts": 1,
+        "flagged_accounts": [
+            {
+                "account_id": "ACC-101",
+                "outcome": "ALERT",
+                "priority": "HIGH",
+                "incomplete": False,
+                "reasons": ["FAN_IN", "NEW_ACCOUNT", "PASS_THROUGH"],
+            },
+            {
+                "account_id": "ACC-105",
+                "outcome": "NEEDS_REVIEW",
+                "priority": None,
+                "incomplete": False,
+                "reasons": ["PASS_THROUGH", "PROFILE_MISSING"],
+            },
+            {
+                "account_id": "ACC-106",
+                "outcome": "ALERT",
+                "priority": "HIGH",
+                "incomplete": True,
+                "reasons": ["FAN_IN", "PASS_THROUGH", "PROFILE_MISSING"],
+            },
+        ],
+        "cases": {"created": 1, "changed": 1, "unchanged": 1},
+        "narratives": {
+            "drafted": 2,
+            "accepted": 1,
+            "fallen_back": {
+                "AI_OFF": 0,
+                "NEEDS_REVIEW": 1,
+                "NO_RECORDING": 0,
+                "AI_UNAVAILABLE": 0,
+                "REJECTED": 1,
+            },
+            "ai_unavailable": 0,
+        },
+        "exit_code": 0,
+        "exit_meaning": "SUCCESS: the run is stored, and every case has its pack",
+    }
+
+
+def test_every_exit_code_has_a_meaning() -> None:
+    assert set(EXIT_MEANINGS) == set(ExitCode)
+
+
+def test_a_finished_run_logs_its_exit_code_run_and_duration(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = run_args(tmp_path, RULES_V1)
+
+    main(args, run=DRAFTED_AND_REJECTED)
+
+    (record,) = log_records(capsys.readouterr().err)
+    assert (record["event"], record["run_id"], record["level"]) == (
+        "run_finished",
+        3,
+        "INFO",
+    )
+    assert record["exit_code"] == 0
+    assert isinstance(record["seconds"], float) and record["seconds"] >= 0
+
+
+def test_a_failed_run_logs_its_exit_code_with_no_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    main(run_args(tmp_path, RULES_V1), run=unbalanced)
+
+    (record,) = log_records(capsys.readouterr().err)
+    assert (record["event"], record["run_id"], record["level"]) == (
+        "run_finished",
+        None,
+        "ERROR",
+    )
+    assert record["exit_code"] == ExitCode.RECONCILIATION_FAILED
+
+
+def test_each_run_logs_each_record_once(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = run_args(tmp_path, RULES_V1)
+    main(args, run=DRAFTED_AND_REJECTED)
+    capsys.readouterr()
+
+    main(args, run=DRAFTED_AND_REJECTED)
+
+    assert len(log_records(capsys.readouterr().err)) == 1
 
 
 @pytest.mark.parametrize(
@@ -267,40 +449,30 @@ def test_an_unavailable_model_exits_with_the_degraded_code_and_says_so(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runner = with_narratives(
-        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.AI_UNAVAILABLE, None)
+        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.AI_UNAVAILABLE)
     )
 
     exit_code = main(run_args(tmp_path, RULES_V1), run=runner)
 
     assert exit_code == ExitCode.DEGRADED
     output = capsys.readouterr()
-    assert "AI_UNAVAILABLE: 1" in output.out
-    assert "1 narrative is a template because the model was unavailable" in output.err
+    assert "AI_UNAVAILABLE: 1" in output.out.splitlines()
+    assert "exit code 4 (DEGRADED): the run is stored" in output.out
+    (record,) = log_records(output.err)
+    assert (record["level"], record["exit_code"]) == ("WARNING", 4)
 
 
 def test_a_missing_recording_is_counted_but_doesnt_degrade_the_run(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     runner = with_narratives(
-        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.NO_RECORDING, None)
+        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.NO_RECORDING)
     )
 
     exit_code = main(run_args(tmp_path, RULES_V1), run=runner)
 
     assert exit_code == ExitCode.SUCCESS
     assert "NO_RECORDING: 1" in capsys.readouterr().out
-
-
-def test_prints_each_live_calls_latency(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    runner = with_narratives(
-        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.AI_DRAFT, 3.456)
-    )
-
-    main(run_args(tmp_path, RULES_V1), run=runner)
-
-    assert "ACC-101 live model call: 3.46 s" in capsys.readouterr().out
 
 
 def test_the_run_command_defaults_to_rules_v1_and_writes_under_out() -> None:

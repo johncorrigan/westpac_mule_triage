@@ -17,7 +17,11 @@ nothing runs.
    file fails it, as do a file in `expected/` that isn't listed, a listed path outside
    `tests/golden/` and a missing answer key;
 6. a secrets check over every file Git tracks or would track;
-7. a smoke run of `python -m mule_triage --help`.
+7. a smoke run, from M7, of `python -m mule_triage run` on the golden data in replay mode, into
+   a new temporary database and folder. It checks for exit code 0, the summary's payment counts
+   against the answer key's `[ingest]` section, a new case for each account the key doesn't
+   give its default outcome, and one Markdown and one JSON pack for each. Until M7 it ran
+   `--help`. `tests/e2e/test_run_command.py` runs the same check under pytest.
 
 Before any of them, it checks that every direct dependency is installed, that nothing installed
 differs from its pin in `constraints.txt`, and that the package loads from this checkout. `--fast` runs only gates 1, 2, 5 and 6, in under a second,
@@ -64,6 +68,58 @@ The AI narrative metric in `intent.md` is still TBD.
   event. `tests/golden/test_recordings.py` pins the reason counts, so a new recording or a
   changed validator must update this section.
 
+## Testing the tests (M7)
+
+Each deliberate bug was applied on its own to a clean tree at commit `0faead0`, before M7's
+changes; `verify.py` failed, and after the revert `git diff` was empty.
+
+1. **An Unknown account age is treated as an old account:** in `detection/rules.py`,
+   `outcome_for` stopped counting an Unknown signal (`unknowns += 1` removed), so a missing
+   profile counted as not breaching. 18 tests failed, among them the golden acceptance test
+   (ACC-105 dropped to NO_ALERT and ACC-106 to MEDIUM, no longer INCOMPLETE), `test_rules.py`'s
+   "one breach and one Unknown" and "two breach and one Unknown" cases, `test_evidence.py`'s
+   missing-profile test, the narrator's NEEDS_REVIEW test and the end-to-end run. Applied again
+   to M7's code, it failed 22 tests and the new smoke gate too: 2 cases and 4 packs, not 3 and 6.
+2. **The validator stops checking citations:** in `narrative/validator.py`, the checks for a
+   sentence citing no fact and for a fact outside the pack were removed, and unknown fact IDs
+   skipped. 3 tests failed, all in `tests/unit/narrative/test_validator.py`:
+   `test_rejects_a_sentence_that_cites_no_fact`,
+   `test_rejects_a_sentence_that_cites_a_fact_outside_this_pack` and
+   `test_a_problem_never_quotes_the_models_free_text`. Nothing beyond the validator's own unit
+   tests would notice: the golden recordings cite real facts, so their replay test still passed.
+
+Both gave the same table, apart from the seconds:
+
+```text
+Gate             Result  Seconds  Detail
+---------------  ------  -------  ------
+black            PASS        0.9  65 files would be left unchanged.
+pyflakes         PASS        0.3
+mypy             PASS        0.3  Success: no issues found in 65 source files
+pytest           FAIL        3.7  exit code 1
+golden checksum  PASS        0.0  4 files match SHA256SUMS
+secrets          PASS        0.1  95 files checked
+smoke            PASS        0.2  python -m mule_triage --help
+
+verify: FAILED (pytest)
+```
+
+Result at the end of M7, on macOS with Python 3.14.7:
+
+```text
+Gate             Result  Seconds  Detail
+---------------  ------  -------  ------
+black            PASS        0.3  69 files would be left unchanged.
+pyflakes         PASS        0.2
+mypy             PASS        0.3  Success: no issues found in 69 source files
+pytest           PASS        4.9  399 passed in 4.47s
+golden checksum  PASS        0.0  4 files match SHA256SUMS
+secrets          PASS        0.1  99 files checked
+smoke            PASS        0.2  golden replay: the answer key's payment counts, a pack per case
+
+verify: every gate passed
+```
+
 ## Where each check would run
 
 | Stage | What would run there |
@@ -85,6 +141,9 @@ Only the first row exists in this build.
   run by no test. They were checked by hand with Apple's Python 3.9.6.
 - **The guard's own tests,** `.cursor/hooks/guard_tests.py`, are run by nothing now that CI is
   retired.
+- **The end-to-end log test never sees a `model_call` record,** which is logged only for a live
+  reply, and neither replay nor an unreachable model gives one. Its fields are pinned in memory
+  instead, by `tests/integration/test_narrative_run.py`.
 - **The architecture rules read code as written,** so they miss what only shows when it runs:
   imports made through `importlib`, the clock or `eval` reached through `getattr` or `builtins`,
   `from os import system`, and SQL assembled without an uppercase SQL keyword in the literal

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, NewType, TypeAlias, assert_never
+from typing import Literal, TypeAlias, assert_never
 
 from mule_triage.contracts import (
     AccountId,
@@ -24,11 +24,11 @@ from mule_triage.contracts import (
     NoAlert,
     Payment,
     RulesConfig,
+    RunId,
 )
 from mule_triage.errors import StoreError
 from mule_triage.records.ingest import ParsedFile, Rejection
 
-RunId = NewType("RunId", int)
 StoredValue: TypeAlias = str | int
 
 BUSY_TIMEOUT_SECONDS = 5.0

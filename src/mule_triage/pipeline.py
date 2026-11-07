@@ -1,7 +1,9 @@
+import logging
 import sqlite3
+from collections import Counter
 from collections.abc import Iterable
 from contextlib import AbstractContextManager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Protocol
@@ -12,16 +14,21 @@ from mule_triage.contracts import (
     AccountProfile,
     AccountResult,
     Alert,
+    CaseCounts,
     IngestCounts,
+    NarrativeOutcome,
     NarrativeSummary,
     NoAlert,
+    Outcome,
     Payment,
     RulesConfig,
+    RunId,
     RunResult,
     TransactionId,
 )
 from mule_triage.errors import ReconciliationError
 from mule_triage.evidence import EvidencePack, build_pack, facts_sha256
+from mule_triage.logs import log_event
 from mule_triage.records.ingest import (
     ParsedFile,
     parse_payments,
@@ -41,7 +48,6 @@ from mule_triage.records.store import (
     ChangeKind,
     FileTally,
     InputFile,
-    RunId,
     RunTally,
     open_store,
 )
@@ -132,6 +138,10 @@ def triage(
         for change in changes:
             log.append(case_event(change, as_of, at, tally.run_id))
         versions = store.case_versions(as_of)
+    result = run_result(
+        tally, tuple(pack.result for pack in packs), case_counts(changes, versions)
+    )
+    log_stored(result)
     by_account = {pack.account_id: pack for pack in packs}
     narrated = tuple(
         (
@@ -145,18 +155,63 @@ def triage(
         at = settings.clock.now()
         for record, change in narrated:
             log.append(narrative_event(record, change, as_of, at, tally.run_id))
+    log_narratives(tally.run_id, tuple(record for record, _ in narrated))
     write_reports(
         settings.out, ((by_account[case.account_id], case.version) for case in versions)
     )
-    return run_result(
-        tally.payments,
-        tuple(pack.result for pack in packs),
-        tuple(
-            NarrativeSummary(
-                record.pack.account_id, record.outcome, record.latency_seconds
-            )
+    log_event(
+        __name__, logging.INFO, "reports_written", tally.run_id, cases=len(versions)
+    )
+    return replace(
+        result,
+        narratives=tuple(
+            NarrativeSummary(record.pack.account_id, record.outcome)
             for record, _ in narrated
         ),
+    )
+
+
+def case_counts(
+    changes: tuple[CaseChange, ...], versions: tuple[CaseVersion, ...]
+) -> CaseCounts:
+    """Every change is to a case at the run's as-of time, so the rest are unchanged."""
+    created = sum(change.kind is ChangeKind.OPENED for change in changes)
+    return CaseCounts(created, len(changes) - created, len(versions) - len(changes))
+
+
+def log_stored(result: RunResult) -> None:
+    outcomes = Counter(account.outcome for account in result.accounts)
+    log_event(
+        __name__,
+        logging.INFO,
+        "run_stored",
+        result.run_id,
+        payments=asdict(result.payment_counts),
+        profiles=asdict(result.profile_counts),
+        outcomes={outcome.value: outcomes[outcome] for outcome in Outcome},
+        cases=asdict(result.cases),
+    )
+
+
+def log_narratives(run_id: RunId, records: tuple[NarrativeRecord, ...]) -> None:
+    """A live call's latency is logged here, never in the run summary."""
+    for record in records:
+        if record.latency_seconds is not None:
+            log_event(
+                __name__,
+                logging.INFO,
+                "model_call",
+                run_id,
+                outcome=record.outcome.value,
+                seconds=round(record.latency_seconds, 3),
+            )
+    outcomes = Counter(record.outcome for record in records)
+    log_event(
+        __name__,
+        logging.INFO,
+        "narratives_stored",
+        run_id,
+        outcomes={outcome.value: outcomes[outcome] for outcome in NarrativeOutcome},
     )
 
 
@@ -265,19 +320,24 @@ def evidence_packs(
     )
 
 
+def ingest_counts(tally: FileTally) -> IngestCounts:
+    return IngestCounts(
+        received=tally.received,
+        accepted=tally.accepted,
+        rejected=len(tally.rejections),
+        duplicates=len(tally.duplicate_ids),
+    )
+
+
 def run_result(
-    payments: FileTally,
-    accounts: tuple[AccountResult, ...],
-    narratives: tuple[NarrativeSummary, ...],
+    tally: RunTally, accounts: tuple[AccountResult, ...], cases: CaseCounts
 ) -> RunResult:
+    """Without narratives: they're drafted after the run's transaction commits."""
+    payments = tally.payments
     return RunResult(
-        narratives=narratives,
-        payment_counts=IngestCounts(
-            received=payments.received,
-            accepted=payments.accepted,
-            rejected=len(payments.rejections),
-            duplicates=len(payments.duplicate_ids),
-        ),
+        run_id=tally.run_id,
+        payment_counts=ingest_counts(payments),
+        profile_counts=ingest_counts(tally.profiles),
         rejected_payment_ids=tuple(
             rejection.record_id
             for rejection in payments.rejections
@@ -287,6 +347,7 @@ def run_result(
             TransactionId(record_id) for record_id in payments.duplicate_ids
         ),
         accounts=accounts,
+        cases=cases,
     )
 
 

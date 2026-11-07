@@ -24,6 +24,7 @@ from pydantic import (
 
 TransactionId = NewType("TransactionId", str)
 AccountId = NewType("AccountId", str)
+RunId = NewType("RunId", int)
 
 # Account IDs are printed, so a newline or control character could forge a line of output.
 # pydantic's regex engine reads `$` as the end of the text, so a trailing newline doesn't match.
@@ -202,16 +203,27 @@ class NarrativeOutcome(StrEnum):
 class NarrativeSummary:
     account_id: AccountId
     outcome: NarrativeOutcome
-    latency_seconds: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class CaseCounts:
+    """The cases at the run's as-of time: a reopened case counts as changed."""
+
+    created: int
+    changed: int
+    unchanged: int
 
 
 @dataclass(frozen=True, slots=True)
 class RunResult:
+    run_id: RunId
     payment_counts: IngestCounts
+    profile_counts: IngestCounts
     # A rejected line's ID is only the text it held, so it isn't a TransactionId.
     rejected_payment_ids: tuple[str, ...]
     duplicate_payment_ids: tuple[TransactionId, ...]
     accounts: tuple[AccountResult, ...]
+    cases: CaseCounts
     narratives: tuple[NarrativeSummary, ...] = ()
 
 

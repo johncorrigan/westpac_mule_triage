@@ -18,9 +18,11 @@ if sys.version_info < (3, 11):
 import argparse
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import subprocess
+import tempfile
 import time
 import tomllib
 from collections.abc import Callable
@@ -38,6 +40,11 @@ GOLDEN_EXPECTED = ROOT / "tests" / "golden" / "expected"
 GOLDEN_MANIFEST = "SHA256SUMS"
 GOLDEN_IGNORED = frozenset({".DS_Store"})
 GOLDEN_CODE_SUFFIXES = frozenset({".py", ".pyc"})
+SMOKE_INPUTS = ("tests/golden/payments.jsonl", "tests/golden/profiles.jsonl")
+SMOKE_AS_OF = "2026-11-03T00:00:00Z"
+SMOKE_STAMP = "20261103T000000Z"
+SMOKE_SUMMARY = "run_summary.json"
+SMOKE_COUNTS = ("received", "accepted", "rejected", "duplicates")
 MANIFEST_LINE = re.compile(r"([0-9a-fA-F]{64}) [ *](.+)")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 ENV_FILE = re.compile(r"(^|/)\.env(\.[^/]+)?$", re.IGNORECASE)
@@ -194,11 +201,65 @@ def tool_gate(*args: str) -> Callable[[], Outcome]:
     return gate
 
 
+def smoke_problems(out: Path, answer_key: Path) -> list[str]:
+    """A fresh run's summary must show the answer key's payment counts, and a case and its
+    two pack files for each account the key doesn't give its default outcome."""
+    summary_path = out / SMOKE_SUMMARY
+    if not summary_path.is_file():
+        return [f"{SMOKE_SUMMARY} is missing"]
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    with answer_key.open("rb") as handle:
+        key = tomllib.load(handle)
+    problems: list[str] = []
+    payments = {name: key["ingest"][name] for name in SMOKE_COUNTS}
+    if summary.get("payments") != payments:
+        problems.append(f"payments are {summary.get('payments')}, not {payments}")
+    cases = sorted(
+        account
+        for account, expected in key["accounts"].items()
+        if expected["outcome"] != key["default_outcome"]
+    )
+    created = {"created": len(cases), "changed": 0, "unchanged": 0}
+    if summary.get("cases") != created:
+        problems.append(f"cases are {summary.get('cases')}, not {created}")
+    packs = sorted(path.name for path in out.iterdir() if path.name != SMOKE_SUMMARY)
+    wanted = sorted(
+        f"{account}_{SMOKE_STAMP}.{suffix}"
+        for account in cases
+        for suffix in ("json", "md")
+    )
+    if packs != wanted:
+        problems.append(f"packs are {packs}, not {wanted}")
+    return problems
+
+
 def check_smoke() -> Outcome:
-    code, output = run_module(["mule_triage", "--help"])
-    if code == 0 and output.startswith("usage: mule_triage"):
-        return Outcome(Status.PASS, "python -m mule_triage --help")
-    return Outcome(Status.FAIL, f"exit code {code}\n{output}")
+    """The golden day, replayed through the command line into a new database and folder."""
+    with tempfile.TemporaryDirectory() as folder:
+        out = Path(folder) / "out"
+        code, output = run_module(
+            [
+                "mule_triage",
+                "run",
+                *SMOKE_INPUTS,
+                "--as-of",
+                SMOKE_AS_OF,
+                "--db",
+                str(Path(folder) / "smoke.db"),
+                "--out",
+                str(out),
+                "--ai",
+                "replay",
+            ]
+        )
+        if code != 0:
+            return Outcome(Status.FAIL, f"exit code {code}\n{output}")
+        problems = smoke_problems(out, GOLDEN_EXPECTED / "outcomes.toml")
+    if problems:
+        return Outcome(Status.FAIL, "\n".join(problems))
+    return Outcome(
+        Status.PASS, "golden replay: the answer key's payment counts, a pack per case"
+    )
 
 
 def sha256_of(path: Path) -> str:

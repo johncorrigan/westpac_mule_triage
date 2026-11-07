@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import json
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -204,6 +205,109 @@ def test_fails_a_golden_file_that_doesnt_match_its_checksums(
 
     assert outcome.status == verify.Status.FAIL
     assert reason in outcome.detail
+
+
+SMOKE_KEY = """default_outcome = "NO_ALERT"
+
+[ingest]
+received = 3
+accepted = 2
+rejected = 1
+duplicates = 0
+
+[accounts.ACC-1]
+outcome = "ALERT"
+
+[accounts.ACC-2]
+outcome = "NO_ALERT"
+"""
+SMOKE_SUMMARY = {
+    "payments": {"received": 3, "accepted": 2, "rejected": 1, "duplicates": 0},
+    "cases": {"created": 1, "changed": 0, "unchanged": 0},
+}
+
+
+def write_smoke_run(folder: Path) -> tuple[Path, Path]:
+    """A smoke run's output folder and the answer key it should match."""
+    key = folder / "outcomes.toml"
+    key.write_text(SMOKE_KEY, encoding="utf-8")
+    out = folder / "out"
+    out.mkdir()
+    (out / "run_summary.json").write_text(json.dumps(SMOKE_SUMMARY), encoding="utf-8")
+    for suffix in ("md", "json"):
+        (out / f"ACC-1_20261103T000000Z.{suffix}").write_text("", encoding="utf-8")
+    return out, key
+
+
+def rewrite_summary(out: Path, section: str, value: dict[str, int]) -> None:
+    (out / "run_summary.json").write_text(
+        json.dumps({**SMOKE_SUMMARY, section: value}), encoding="utf-8"
+    )
+
+
+def test_passes_a_smoke_run_that_matches_the_answer_key(
+    verify: ModuleType, tmp_path: Path
+) -> None:
+    out, key = write_smoke_run(tmp_path)
+
+    problems = verify.smoke_problems(out, key)
+
+    assert problems == []
+
+
+@pytest.mark.parametrize(
+    ("tamper", "problem"),
+    [
+        (
+            lambda out: rewrite_summary(
+                out,
+                "payments",
+                {"received": 3, "accepted": 3, "rejected": 0, "duplicates": 0},
+            ),
+            "payments are",
+        ),
+        (
+            lambda out: rewrite_summary(
+                out, "cases", {"created": 2, "changed": 0, "unchanged": 0}
+            ),
+            "cases are",
+        ),
+        (
+            lambda out: (out / "ACC-1_20261103T000000Z.json").unlink(),
+            "packs are",
+        ),
+        (
+            lambda out: (out / "ACC-2_20261103T000000Z.md").write_text(
+                "", encoding="utf-8"
+            ),
+            "packs are",
+        ),
+        (
+            lambda out: (out / "run_summary.json").unlink(),
+            "run_summary.json is missing",
+        ),
+    ],
+    ids=[
+        "payment counts off the key",
+        "a case too many",
+        "a case without its JSON pack",
+        "a pack for a NO_ALERT account",
+        "no summary",
+    ],
+)
+def test_flags_a_smoke_run_that_doesnt_match_the_answer_key(
+    verify: ModuleType,
+    tmp_path: Path,
+    tamper: Callable[[Path], object],
+    problem: str,
+) -> None:
+    out, key = write_smoke_run(tmp_path)
+    tamper(out)
+
+    problems = verify.smoke_problems(out, key)
+
+    assert len(problems) == 1
+    assert problem in problems[0]
 
 
 def test_flags_a_dot_env_file_that_git_would_track(
