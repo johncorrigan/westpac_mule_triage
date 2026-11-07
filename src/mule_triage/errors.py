@@ -12,3 +12,11 @@ class StoreError(MuleTriageError):
 
 class RulesError(MuleTriageError):
     """The rules file can't be read, or holds a missing, invalid or unknown setting."""
+
+
+class SettingsError(MuleTriageError):
+    """An AI setting, such as the mode, model, endpoint or timeout, is invalid."""
+
+
+class RecordingMissing(MuleTriageError):
+    """No recorded reply is filed under a recording key."""

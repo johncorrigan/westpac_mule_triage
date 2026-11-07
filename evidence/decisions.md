@@ -35,6 +35,27 @@ Each entry gives the decision, why, and what it costs. Written at the milestone 
   investigators, one case per account without a profile that has one breach. Thresholds are
   judgement, not tuned on data: the rules evaluation metric in `intent.md` is still TBD.
 
+## AI drafts, people decide (M6)
+
+- **Decision:** the model only drafts a narrative for an ALERT case. It never sets an
+  outcome, a priority or a disposition, and never sees them. Rules decide the outcome, and the
+  investigator decides the disposition. A NEEDS_REVIEW case gets no AI draft at all.
+- **Why:** an outcome must be explainable and repeatable from the stored records, which a
+  model's output isn't. The draft saves the reviewer typing, and the validator, the model
+  label and the audit event make it checkable. Replay, the default, makes every test and demo
+  repeatable without a model; a missing recording is counted, never silent.
+- **Cost:** the model can't help with the hardest cases, the NEEDS_REVIEW ones. An unavailable
+  model, a missing recording or a rejected draft leaves the reviewer a template to finish by
+  hand. Recordings must be made again whenever the prompt version, the model or a case's facts
+  change.
+- **Known limits (M6 part 2 self-review):** a narrative is drafted only when a case opens or
+  changes, so a model that comes back later doesn't replace a template, and a crash between
+  the run's commit and its narrative events leaves those cases without one; nothing caps the
+  reply's length (`num_predict`), so Ollama keeps generating after the client gives up; the
+  completeness test checks only that recordings exist, not that they pass the validator; a
+  NO_RECORDING reason names the recordings folder, which can be a local path; and the prompt's
+  size isn't checked against the context.
+
 ## A strict validator and a template, not trust in the model (M6)
 
 - **Decision:** the model's draft is used only if `narrative/validator.py` accepts it;

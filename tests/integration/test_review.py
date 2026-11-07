@@ -77,9 +77,10 @@ def test_each_new_case_is_an_audit_event_with_its_run(
 
     run_golden(database, rules)
 
-    ((event_type, payload),) = history(database)
+    (event_type, payload), (narrated, _) = history(database)
     assert event_type is EventType.CASE_OPENED
     assert (payload["run_id"], payload["version"]) == (1, 1)
+    assert narrated is EventType.NARRATIVE
 
 
 def test_a_rerun_of_the_same_files_adds_no_audit_event(
@@ -91,7 +92,8 @@ def test_a_rerun_of_the_same_files_adds_no_audit_event(
     run_golden(database, rules)
 
     assert [event_type for event_type, _ in history(database)] == [
-        EventType.CASE_OPENED
+        EventType.CASE_OPENED,
+        EventType.NARRATIVE,
     ]
 
 
@@ -106,9 +108,11 @@ def test_a_change_to_an_open_case_is_audited_as_changed_not_reopened(
     events = history(database)
     assert [event_type for event_type, _ in events] == [
         EventType.CASE_OPENED,
+        EventType.NARRATIVE,
         EventType.CASE_CHANGED,
+        EventType.NARRATIVE,
     ]
-    assert (events[1][1]["run_id"], events[1][1]["version"]) == (2, 2)
+    assert (events[2][1]["run_id"], events[2][1]["version"]) == (2, 2)
 
 
 def test_a_disposition_on_the_current_version_closes_the_case_and_is_audited(
@@ -124,7 +128,7 @@ def test_a_disposition_on_the_current_version_closes_the_case_and_is_audited(
         view = case_view(store, ACC_101, AS_OF, rules)
     assert view is not None
     assert (view.case.status, view.case.version) == (CaseStatus.CLOSED, 2)
-    _, (event_type, payload) = history(database)
+    *_, (event_type, payload) = history(database)
     assert event_type is EventType.DISPOSED
     assert payload == {
         "reason": "ESCALATED",
@@ -187,10 +191,12 @@ def test_one_more_payment_reopens_a_disposed_case_and_stales_its_old_version(
     assert (view.case.status, view.case.version) == (CaseStatus.OPEN, 3)
     assert [t for t, _ in history(database)] == [
         EventType.CASE_OPENED,
+        EventType.NARRATIVE,
         EventType.DISPOSED,
         EventType.CASE_REOPENED,
+        EventType.NARRATIVE,
     ]
-    assert history(database)[2][1]["run_id"] == 2
+    assert history(database)[3][1]["run_id"] == 2
 
 
 def test_a_case_view_shows_the_stored_case_and_its_rebuilt_pack(

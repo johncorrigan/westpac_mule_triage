@@ -7,11 +7,22 @@ import pytest
 from mule_triage.cli import (
     DEFAULT_RULES,
     ExitCode,
+    Runner,
+    ai_settings,
     build_parser,
     load_rules,
     main,
 )
-from mule_triage.contracts import RulesConfig, RunResult
+from mule_triage.contracts import (
+    AccountId,
+    AiMode,
+    AiSettings,
+    IngestCounts,
+    NarrativeOutcome,
+    NarrativeSummary,
+    RulesConfig,
+    RunResult,
+)
 from mule_triage.errors import ReconciliationError, RulesError, StoreError
 from mule_triage.pipeline import Settings
 
@@ -193,6 +204,103 @@ def test_refuses_an_as_of_time_without_a_timezone(tmp_path: Path, as_of: str) ->
         main(args, run=never_runs)
 
     assert raised.value.code == ExitCode.USAGE_ERROR
+
+
+def with_narratives(*narratives: NarrativeSummary) -> Runner:
+    def runner(
+        payments: Path, profiles: Path, as_of: datetime, settings: Settings
+    ) -> RunResult:
+        return RunResult(IngestCounts(0, 0, 0, 0), (), (), (), narratives)
+
+    return runner
+
+
+@pytest.mark.parametrize(
+    ("flags", "problem"),
+    [
+        (["--endpoint", "ftp://localhost:11434"], "endpoint"),
+        (["--endpoint", "http://localhost:11434/api/chat"], "endpoint"),
+        (["--endpoint", "localhost:11434"], "endpoint"),
+        (["--model", "granite 3.3"], "model"),
+        (["--ai-timeout", "0"], "timeout_seconds"),
+        (["--ai-timeout", "601"], "timeout_seconds"),
+        (["--record"], "--record needs --ai live"),
+    ],
+    ids=[
+        "not http",
+        "a path after the host",
+        "no scheme",
+        "a space in the model",
+        "no time",
+        "over ten minutes",
+        "record without live",
+    ],
+)
+def test_refuses_bad_ai_settings_before_the_run_starts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    flags: list[str],
+    problem: str,
+) -> None:
+    exit_code = main(run_args(tmp_path, RULES_V1) + flags, run=never_runs)
+
+    assert exit_code == ExitCode.USAGE_ERROR
+    assert problem in capsys.readouterr().err
+
+
+def test_the_ai_defaults_to_replaying_granite_from_the_local_ollama() -> None:
+    args = build_parser().parse_args(["run", "p.jsonl", "q.jsonl", "--as-of", AS_OF])
+
+    settings = ai_settings(args)
+
+    assert settings == AiSettings(
+        mode=AiMode.REPLAY,
+        model="granite3.3:8b",
+        endpoint="http://localhost:11434",
+        timeout_seconds=60,
+        record=False,
+        recordings=Path("tests/ai/recorded"),
+    )
+
+
+def test_an_unavailable_model_exits_with_the_degraded_code_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = with_narratives(
+        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.AI_UNAVAILABLE, None)
+    )
+
+    exit_code = main(run_args(tmp_path, RULES_V1), run=runner)
+
+    assert exit_code == ExitCode.DEGRADED
+    output = capsys.readouterr()
+    assert "AI_UNAVAILABLE: 1" in output.out
+    assert "1 narrative is a template because the model was unavailable" in output.err
+
+
+def test_a_missing_recording_is_counted_but_doesnt_degrade_the_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = with_narratives(
+        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.NO_RECORDING, None)
+    )
+
+    exit_code = main(run_args(tmp_path, RULES_V1), run=runner)
+
+    assert exit_code == ExitCode.SUCCESS
+    assert "NO_RECORDING: 1" in capsys.readouterr().out
+
+
+def test_prints_each_live_calls_latency(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = with_narratives(
+        NarrativeSummary(AccountId("ACC-101"), NarrativeOutcome.AI_DRAFT, 3.456)
+    )
+
+    main(run_args(tmp_path, RULES_V1), run=runner)
+
+    assert "ACC-101 live model call: 3.46 s" in capsys.readouterr().out
 
 
 def test_the_run_command_defaults_to_rules_v1_and_writes_under_out() -> None:

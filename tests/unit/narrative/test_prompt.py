@@ -10,6 +10,7 @@ from mule_triage.narrative.prompt import (
     MAX_SENTENCES,
     PROMPT_VERSION,
     build_prompt,
+    prompt_fingerprint,
 )
 from mule_triage.signals import activities
 
@@ -75,6 +76,20 @@ def test_a_reference_holding_the_delimiters_cant_close_the_data_block(
     assert prompt.data.count(DATA_OPEN) == prompt.data.count(DATA_CLOSE) == 1
     (payment,) = [f for f in data_lines(prompt.data) if f["source"] == "payments"]
     assert payment["reference"] == forged
+
+
+FINGERPRINTS = {
+    "narrative-v1": "5c0257281d87c95d4cbd467b0c84d93cab0cbb35dbe9073e9135f5da4775a429",
+}
+
+
+def test_a_change_to_the_prompt_schema_or_options_needs_a_new_prompt_version() -> None:
+    """Recordings are keyed by the version, so a change under the same version would replay
+    old replies as if they answered the new prompt. Raise PROMPT_VERSION and re-record.
+    """
+    found = prompt_fingerprint()
+
+    assert FINGERPRINTS[PROMPT_VERSION] == found
 
 
 def test_the_instructions_ask_for_cited_json_within_the_limits(

@@ -20,6 +20,8 @@ def run_command(payments: Path, database: Path) -> subprocess.CompletedProcess[s
         str(database),
         "--out",
         str(database.parent / "out"),
+        "--ai",
+        "off",
     ]
     return subprocess.run(
         command, cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
@@ -40,6 +42,8 @@ def test_the_run_command_triages_the_golden_day_with_the_default_rules(
         "ACC-101 ALERT HIGH FAN_IN,NEW_ACCOUNT,PASS_THROUGH",
         "ACC-105 NEEDS_REVIEW PASS_THROUGH,PROFILE_MISSING",
         "ACC-106 ALERT HIGH INCOMPLETE FAN_IN,PASS_THROUGH,PROFILE_MISSING",
+        "narratives: AI_DRAFT: 0, AI_OFF: 2, NEEDS_REVIEW: 1, NO_RECORDING: 0,"
+        " AI_UNAVAILABLE: 0, REJECTED: 0",
     ]
 
 

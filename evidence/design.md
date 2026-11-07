@@ -20,7 +20,8 @@ flowchart TD
 
 At M5b every module but `narrative.py` (M6) and `generate.py` (G) exists. At M6 the narrative
 became a sub-package, `narrative/`, whose modules all sit in layer 4: `prompt.py`,
-`validator.py` and `template.py` are pure. The core is pure:
+`validator.py`, `template.py` and `narrator.py` are pure, and `client.py` is an edge. The core
+is pure:
 `signals`, `rules` and `evidence` compute from records they're given. The edges are the store,
 the audit log, the report files and the command line. `cli.py` is the composition root: it builds
 the real implementations, including the wall clock, and passes them in, and it's the only module
@@ -93,6 +94,38 @@ A later run that changes a closed case reopens it, and the disposition stays in 
 `show` rebuilds the pack from the stored records and warns if it differs from the stored case.
 Not covered: anyone who can write to the file can drop the triggers. They stop the tool and
 ordinary SQL from rewriting history, but they don't make the file tamper-proof.
+
+## The AI boundary
+
+Written at M6. `narrative/narrator.py` drafts a narrative for each ALERT case that opens or
+changes in a run, after the run commits, so a slow model never holds the database. A
+NEEDS_REVIEW case always gets the template, and the model is never asked. The model sees only
+the prompt: this case's facts as escaped JSON, never the outcome. Its reply counts only if
+`narrative/validator.py` accepts it; otherwise the reviewer gets the template and the reason.
+`--ai` picks the client behind `ModelClient.draft`:
+
+- `off` never drafts;
+- `replay`, the default, reads `tests/ai/recorded/<model>_<prompt version>_<facts hash>.json`,
+  keyed by the same `facts_sha256` the case stores, over canonical JSON; a missing recording
+  gives the template and counts as NO_RECORDING;
+- `live` calls Ollama's `/api/chat` with streaming off, temperature 0, seed 42, the reply's JSON
+  Schema in `format` and `num_ctx` 8192, ignoring proxy settings
+  (`tests/unit/narrative/test_client.py`, against a stub server). An unreachable or slow model,
+  or one that isn't pulled, gives the template, counts as AI_UNAVAILABLE for the rest of the
+  run and exits 4, and the run is still stored (`tests/integration/test_narrative_run.py`). A
+  reply that isn't Ollama's shape, or is over 1 MB, is REJECTED for its case alone. The reason
+  is a fixed message, never the error's text, which can quote the server. `--record` saves
+  each reply with the model's digest from `/api/tags`, and no times.
+
+A test pins a fingerprint of the instructions, the reply's schema and the model's options to
+`narrative-v1`, so a change to any of them fails until `PROMPT_VERSION` is raised and the
+replies are recorded again.
+
+Each narrative is a `NARRATIVE` audit event: the outcome, live or replay, the model and its
+digest, the prompt version, the facts hash, the raw reply, the verdict and the template's
+reasons. The raw reply can hold personal data, as the packs can. Not covered: a crash between
+the run's commit and the narrative events leaves those cases without a narrative, and a re-run
+that changes no case drafts none.
 
 ## Data flow
 

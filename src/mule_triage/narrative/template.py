@@ -34,6 +34,10 @@ def for_rejected_draft(pack: EvidencePack, rejected: Rejected) -> TemplateNarrat
     return TemplateNarrative(NO_AI_DRAFT, reasons, template_sentences(pack))
 
 
+def for_no_draft(pack: EvidencePack, reason: str) -> TemplateNarrative:
+    return TemplateNarrative(NO_AI_DRAFT, (reason,), template_sentences(pack))
+
+
 def for_needs_review(pack: EvidencePack) -> TemplateNarrative:
     missing = "; ".join(f"{m.signal} is unknown ({m.reason})" for m in pack.missing)
     reason = (

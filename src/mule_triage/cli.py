@@ -17,13 +17,27 @@ from mule_triage import pipeline
 from mule_triage.clock import Clock
 from mule_triage.contracts import (
     ACCOUNT_ID_PATTERN,
+    AiMode,
+    AiSettings,
     Alert,
+    NarrativeOutcome,
     NoAlert,
     Outcome,
     RulesConfig,
     RunResult,
 )
-from mule_triage.errors import ReconciliationError, RulesError, StoreError
+from mule_triage.errors import (
+    ReconciliationError,
+    RulesError,
+    SettingsError,
+    StoreError,
+)
+from mule_triage.narrative.client import (
+    LiveClient,
+    ModelClient,
+    OffClient,
+    ReplayClient,
+)
 from mule_triage.pipeline import Settings
 from mule_triage.report import case_markdown
 from mule_triage.review import (
@@ -111,6 +125,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--rules", type=Path, default=DEFAULT_RULES)
     run.add_argument("--db", type=Path, default=DEFAULT_DATABASE)
     run.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ai_arguments(run)
     show = commands.add_parser(
         "show", help="show one case, its version, its evidence and its history"
     )
@@ -138,6 +153,57 @@ def build_parser() -> argparse.ArgumentParser:
         help="whether the reviewer accepted, edited or discarded the narrative",
     )
     return parser
+
+
+def ai_arguments(parser: argparse.ArgumentParser) -> None:
+    defaults = AiSettings()
+    parser.add_argument(
+        "--ai",
+        type=AiMode,
+        choices=list(AiMode),
+        default=defaults.mode,
+        help="draft narratives with no model, from recorded replies, or live",
+    )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="with --ai live, save each reply under its key in --recordings",
+    )
+    parser.add_argument("--model", default=defaults.model)
+    parser.add_argument("--endpoint", default=defaults.endpoint, help="Ollama's URL")
+    parser.add_argument("--ai-timeout", type=int, default=defaults.timeout_seconds)
+    parser.add_argument("--recordings", type=Path, default=defaults.recordings)
+
+
+def ai_settings(args: argparse.Namespace) -> AiSettings:
+    try:
+        return AiSettings(
+            mode=args.ai,
+            model=args.model,
+            endpoint=args.endpoint,
+            timeout_seconds=args.ai_timeout,
+            record=args.record,
+            recordings=args.recordings,
+        )
+    except ValidationError as error:
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in detail['loc']) or 'ai'}: {detail['msg']}"
+            for detail in error.errors()
+        )
+        raise SettingsError(f"AI settings: {problems}") from error
+
+
+def model_client(ai: AiSettings) -> ModelClient:
+    match ai.mode:
+        case AiMode.OFF:
+            return OffClient()
+        case AiMode.REPLAY:
+            return ReplayClient(ai.recordings, ai.model)
+        case AiMode.LIVE:
+            record_to = ai.recordings if ai.record else None
+            return LiveClient(ai.endpoint, ai.model, ai.timeout_seconds, record_to)
+        case _:
+            assert_never(ai.mode)
 
 
 def load_rules(path: Path) -> RulesConfig:
@@ -181,7 +247,30 @@ def summary(result: RunResult) -> str:
                 flags.append("INCOMPLETE")
         reasons = ",".join(sorted(account.reasons))
         lines.append(f"{account.account_id} {' '.join(flags)} {reasons}")
+    narratives = Counter(each.outcome for each in result.narratives)
+    lines.append(
+        "narratives: "
+        + ", ".join(f"{outcome}: {narratives[outcome]}" for outcome in NarrativeOutcome)
+    )
+    lines += [
+        f"{each.account_id} live model call: {each.latency_seconds:.2f} s"
+        for each in result.narratives
+        if each.latency_seconds is not None
+    ]
     return "\n".join(lines)
+
+
+def unavailable_warning(result: RunResult) -> str | None:
+    count = sum(
+        each.outcome is NarrativeOutcome.AI_UNAVAILABLE for each in result.narratives
+    )
+    if count == 0:
+        return None
+    templates = "narrative is a template" if count == 1 else "narratives are templates"
+    return (
+        f"mule_triage: {count} {templates} because the model was unavailable"
+        " (AI_UNAVAILABLE); the run is stored"
+    )
 
 
 def dispose_command(args: argparse.Namespace, clock: Clock) -> int:
@@ -255,15 +344,13 @@ def dispatch(args: argparse.Namespace, run: Runner, now: Clock) -> int:
         rules = load_rules(args.rules)
         if args.command == "show":
             return show_command(args, rules)
-    except RulesError as error:
-        print(f"mule_triage: {error}", file=sys.stderr)
-        return ExitCode.USAGE_ERROR
-    except StoreError as error:
+        ai = ai_settings(args)
+    except (RulesError, SettingsError, StoreError) as error:
         print(f"mule_triage: {error}", file=sys.stderr)
         return ExitCode.USAGE_ERROR
     try:
         args.db.parent.mkdir(parents=True, exist_ok=True)
-        settings = Settings(args.db, rules, args.out, now)
+        settings = Settings(args.db, rules, args.out, now, model_client(ai))
         result = run(args.payments, args.profiles, args.as_of, settings)
     except ReconciliationError as error:
         print(f"mule_triage: nothing was stored: {error}", file=sys.stderr)
@@ -275,4 +362,8 @@ def dispatch(args: argparse.Namespace, run: Runner, now: Clock) -> int:
         print(f"mule_triage: {error.filename}: {error.strerror}", file=sys.stderr)
         return ExitCode.USAGE_ERROR
     print(summary(result))
+    warning = unavailable_warning(result)
+    if warning is not None:
+        print(warning, file=sys.stderr)
+        return ExitCode.DEGRADED
     return ExitCode.SUCCESS

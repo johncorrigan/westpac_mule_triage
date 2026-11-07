@@ -8,7 +8,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, ClassVar, Generic, NewType, Self, TypeAlias, TypeVar
+from urllib.parse import urlsplit
 
 from pydantic import (
     AfterValidator,
@@ -185,6 +187,24 @@ class IngestCounts:
     duplicates: int
 
 
+class NarrativeOutcome(StrEnum):
+    """AI_DRAFT is the model's checked draft; every other outcome is the template."""
+
+    AI_DRAFT = "AI_DRAFT"
+    AI_OFF = "AI_OFF"
+    NEEDS_REVIEW = "NEEDS_REVIEW"
+    NO_RECORDING = "NO_RECORDING"
+    AI_UNAVAILABLE = "AI_UNAVAILABLE"
+    REJECTED = "REJECTED"
+
+
+@dataclass(frozen=True, slots=True)
+class NarrativeSummary:
+    account_id: AccountId
+    outcome: NarrativeOutcome
+    latency_seconds: float | None
+
+
 @dataclass(frozen=True, slots=True)
 class RunResult:
     payment_counts: IngestCounts
@@ -192,3 +212,50 @@ class RunResult:
     rejected_payment_ids: tuple[str, ...]
     duplicate_payment_ids: tuple[TransactionId, ...]
     accounts: tuple[AccountResult, ...]
+    narratives: tuple[NarrativeSummary, ...] = ()
+
+
+class AiMode(StrEnum):
+    OFF = "off"
+    REPLAY = "replay"
+    LIVE = "live"
+
+
+DEFAULT_MODEL = "granite3.3:8b"
+MODEL_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$"
+
+
+def plain_endpoint(text: str) -> str:
+    """An http or https base URL, such as http://localhost:11434, with nothing after it."""
+    parts = urlsplit(text)
+    plain = (
+        parts.scheme in ("http", "https")
+        and bool(parts.hostname)
+        and parts.path in ("", "/")
+        and not (parts.query or parts.fragment or parts.username or parts.password)
+    )
+    if not plain:
+        raise ValueError(
+            "must be http:// or https:// and a host, with nothing after it"
+        )
+    # Reading `port` raises ValueError for a port that isn't a number up to 65535.
+    if parts.port == 0:
+        raise ValueError("needs a port from 1 to 65535")
+    return text.rstrip("/")
+
+
+class AiSettings(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    mode: AiMode = AiMode.REPLAY
+    model: Annotated[str, StringConstraints(pattern=MODEL_NAME_PATTERN)] = DEFAULT_MODEL
+    endpoint: Annotated[str, AfterValidator(plain_endpoint)] = "http://localhost:11434"
+    timeout_seconds: int = Field(default=60, ge=1, le=600)
+    record: bool = False
+    recordings: Path = Path("tests/ai/recorded")
+
+    @model_validator(mode="after")
+    def records_only_live_replies(self) -> Self:
+        if self.record and self.mode is not AiMode.LIVE:
+            raise ValueError("--record needs --ai live")
+        return self

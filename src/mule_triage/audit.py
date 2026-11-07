@@ -48,6 +48,7 @@ class EventType(StrEnum):
     CASE_CHANGED = "CASE_CHANGED"
     CASE_REOPENED = "CASE_REOPENED"
     DISPOSED = "DISPOSED"
+    NARRATIVE = "NARRATIVE"
 
 
 @dataclass(frozen=True, slots=True)

@@ -150,3 +150,20 @@ Ten hostile drafts, run in memory against ACC-101's golden pack, all passed the 
 Found before the review, and fixed: an account ID of digits alone, such as `950`, was taken out of a sentence as an ID, so it could hide an invented $950; the test failed first.
 
 The reasons for each decision are mine to add.
+
+### M6 part 2 review (by the building agent, at my request)
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 | Rewording the prompt, or changing its schema or options, under the same version would replay old replies as if they answered it; a probe confirmed the key didn't change | Fix | A test pins a fingerprint of the instructions, schema and options to `narrative-v1`; it failed first, and changing only the seed fails it |
+| R2 | An unavailable model's reason held the error's text, which can quote the server's reply, so injected text could reach the reviewer and the audit; a probe confirmed it | Fix | A fixed message for each kind of failure; two cases failed first |
+| R3 | One reply that wasn't Ollama's shape, or was over 1 MB, made the model unavailable for the rest of the run and exited 4 | Fix | Such a reply is REJECTED for its case alone; two cases failed first |
+| R4 | Replay through the command line wasn't tested, since the end-to-end test uses `--ai off` | Fix | New test; it fails when the replay client's arguments are swapped |
+| R5 | A re-run never re-drafts, and a crash between the two transactions leaves a case without a narrative | Open | Recorded as a known limit in `decisions.md` |
+| R6 | No cap on the reply's length, so Ollama keeps generating after a timeout | Open | Recorded as a known limit |
+| R7 | The completeness test checks only that recordings exist | Open: for part 3 | Recorded as a known limit |
+| R8 | A NO_RECORDING reason names the recordings folder, which can be a local path; the prompt's size is unchecked; the endpoint may be remote plain HTTP | Open | Recorded as known limits, and the endpoint as an assumption |
+
+Found while fixing, and fixed: the stub server's half-second shutdown poll made the client tests take about 4.5 seconds; they now take under one.
+
+The reasons for each decision are mine to add.

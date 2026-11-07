@@ -13,6 +13,8 @@ from mule_triage.contracts import (
     AccountResult,
     Alert,
     IngestCounts,
+    NarrativeSummary,
+    NoAlert,
     Payment,
     RulesConfig,
     RunResult,
@@ -21,6 +23,10 @@ from mule_triage.contracts import (
 from mule_triage.errors import ReconciliationError
 from mule_triage.evidence import EvidencePack, build_pack, facts_sha256
 from mule_triage.ingest import ParsedFile, parse_payments, parse_profiles, read_lines
+from mule_triage.narrative.client import ModelClient, OffClient
+from mule_triage.narrative.narrator import NarrativeRecord, narrate
+from mule_triage.narrative.template import TemplateNarrative
+from mule_triage.narrative.validator import Accepted
 from mule_triage.report import write_reports
 from mule_triage.signals import activities
 from mule_triage.store import (
@@ -38,10 +44,13 @@ from mule_triage.store import (
 
 @dataclass(frozen=True, slots=True)
 class Settings:
+    """`cli.py` passes the client for `--ai`; without one, nothing is drafted."""
+
     database: Path
     rules: RulesConfig
     out: Path
     clock: Clock
+    client: ModelClient = OffClient()
 
 
 class RunStore(Protocol):
@@ -96,8 +105,10 @@ def triage(
     store: RunStore,
 ) -> RunResult:
     """Signals read every stored payment, because on a re-run every line is a duplicate.
-    Each case change is audited in the run's transaction; reports are written after the
-    commit, for every case at this as-of time."""
+    Each case change is audited in the run's transaction. Each opened or changed ALERT and
+    NEEDS_REVIEW case is narrated after the commit, so a slow model never holds the
+    database, and its narrative is audited in a second transaction. Reports are written
+    last, for every case at this as-of time."""
     parsed_payments = parse_payments(read_lines(payments))
     parsed_profiles = parse_profiles(read_lines(profiles))
     log = AuditLog(store.connection)
@@ -117,10 +128,31 @@ def triage(
             log.append(case_event(change, as_of, at, tally.run_id))
         versions = store.case_versions(as_of)
     by_account = {pack.account_id: pack for pack in packs}
+    narrated = tuple(
+        (
+            narrate(by_account[change.snapshot.result.account_id], settings.client),
+            change,
+        )
+        for change in changes
+        if not isinstance(change.snapshot.result, NoAlert)
+    )
+    with store.transaction():
+        at = settings.clock.now()
+        for record, change in narrated:
+            log.append(narrative_event(record, change, as_of, at, tally.run_id))
     write_reports(
         settings.out, ((by_account[case.account_id], case.version) for case in versions)
     )
-    return run_result(tally.payments, tuple(pack.result for pack in packs))
+    return run_result(
+        tally.payments,
+        tuple(pack.result for pack in packs),
+        tuple(
+            NarrativeSummary(
+                record.pack.account_id, record.outcome, record.latency_seconds
+            )
+            for record, _ in narrated
+        ),
+    )
 
 
 CASE_EVENTS = {
@@ -150,6 +182,45 @@ def case_event(
                 "incomplete": isinstance(result, Alert) and result.incomplete,
                 "reasons": sorted(result.reasons),
                 "facts_sha256": change.snapshot.facts_sha256,
+            }
+        ),
+    )
+
+
+def narrative_event(
+    record: NarrativeRecord,
+    change: CaseChange,
+    as_of: datetime,
+    at: datetime,
+    run_id: RunId,
+) -> AuditEvent:
+    label, narrative, verdict = record.label, record.narrative, record.verdict
+    return AuditEvent(
+        EventType.NARRATIVE,
+        record.pack.account_id,
+        as_of,
+        at,
+        payload_json(
+            {
+                "run_id": run_id,
+                "version": change.version,
+                "outcome": record.outcome.value,
+                "source": None if label is None else label.source.value,
+                "model": None if label is None else label.model,
+                "digest": None if label is None else label.digest,
+                "prompt_version": record.prompt_version,
+                "facts_sha256": record.facts_sha256,
+                "reply": record.reply,
+                "verdict": (
+                    None
+                    if verdict is None
+                    else "ACCEPTED" if isinstance(verdict, Accepted) else "REJECTED"
+                ),
+                "reasons": (
+                    list(narrative.reasons)
+                    if isinstance(narrative, TemplateNarrative)
+                    else []
+                ),
             }
         ),
     )
@@ -189,8 +260,13 @@ def evidence_packs(
     )
 
 
-def run_result(payments: FileTally, accounts: tuple[AccountResult, ...]) -> RunResult:
+def run_result(
+    payments: FileTally,
+    accounts: tuple[AccountResult, ...],
+    narratives: tuple[NarrativeSummary, ...],
+) -> RunResult:
     return RunResult(
+        narratives=narratives,
         payment_counts=IngestCounts(
             received=payments.received,
             accepted=payments.accepted,
