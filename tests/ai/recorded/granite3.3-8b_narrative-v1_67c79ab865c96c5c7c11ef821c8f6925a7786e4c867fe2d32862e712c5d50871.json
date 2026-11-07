@@ -1,0 +1,7 @@
+{
+  "digest": "fd429f23b90980ed1bef53b990894e7b0199331f6ae90c5650240a7d5b70f1f7",
+  "facts_sha256": "67c79ab865c96c5c7c11ef821c8f6925a7786e4c867fe2d32862e712c5d50871",
+  "model": "granite3.3:8b",
+  "prompt_version": "narrative-v1",
+  "reply": "{\"sentences\": [{\"text\": \"Account ACC-106 received payments from at least 5 distinct senders, breaching the FAN_IN rule on 2026-11-03T00:00:00Z.\", \"fact_ids\": [\"S-FAN_IN\"]}, {\"text\": \"The account also breached the PASS_THROUGH rule as it received 90% of its payments within 3 hours, from 2026-11-02T08:00:00Z to 2026-11-02T09:30:00Z.\", \"fact_ids\": [\"S-PASS_THROUGH\"]}, {\"text\": \"The account age is unknown as the PROFILE_MISSING fact is not available.\", \"fact_ids\": [\"S-NEW_ACCOUNT\"]}, {\"text\": \"ACC-106 received a $600 payment each from accounts ACC-251, ACC-252, ACC-253, and ACC-254 on 2026-11-02 between 08:00 and 09:30.\", \"fact_ids\": [\"P-TX-106-01\", \"P-TX-106-02\", \"P-TX-106-03\", \"P-TX-106-04\"]}, {\"text\": \"A $600 payment was sent from ACC-106 to ACC-351 on 2026-11-02T11:00:00Z, referenced as a 'transfer'.\", \"fact_ids\": [\"P-TX-106-06\"]}]}"
+}

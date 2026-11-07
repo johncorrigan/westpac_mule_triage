@@ -1,0 +1,7 @@
+{
+  "digest": "fd429f23b90980ed1bef53b990894e7b0199331f6ae90c5650240a7d5b70f1f7",
+  "facts_sha256": "141550e3372e1b73f6aaf46b81517847c760afa7f82b169cf97ba47462f201c9",
+  "model": "granite3.3:8b",
+  "prompt_version": "narrative-v1",
+  "reply": "{\"sentences\": [{\"text\": \"Account ACC-101 received payments from seven distinct senders, breaching the 'distinct senders' rule.\", \"fact_ids\": [\"S-FAN_IN\"]}, {\"text\": \"The payments out from ACC-101 shared 95% of the total amount received, breaching the 'share sent on' rule.\", \"fact_ids\": [\"S-PASS_THROUGH\"]}, {\"text\": \"Account ACC-101 was opened 9 days ago, breaching the 'account age in days' rule.\", \"fact_ids\": [\"S-NEW_ACCOUNT\"]}, {\"text\": \"On 2026-11-02, ACC-101 received seven payments totaling $4500 from ACC-201, ACC-202, ACC-203, ACC-204, ACC-205, ACC-206, and ACC-207.\", \"fact_ids\": [\"P-TX-101-01\", \"P-TX-101-02\", \"P-TX-101-03\", \"P-TX-101-04\", \"P-TX-101-05\", \"P-TX-101-06\", \"P-TX-101-07\"]}, {\"text\": \"On 2026-11-02, between 09:00 and 11:30, ACC-101 made two transfers, one for $5000 to ACC-301 and another for $1000 to ACC-302.\", \"fact_ids\": [\"P-TX-101-08\", \"P-TX-101-09\"]}, {\"text\": \"Account ACC-101 was opened on 2026-10-25.\", \"fact_ids\": [\"PR-ACC-101\"]}]}"
+}
