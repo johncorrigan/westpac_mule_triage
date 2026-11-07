@@ -10,7 +10,7 @@ from collections.abc import Iterable
 from datetime import UTC
 from pathlib import Path
 
-from mule_triage.contracts import Alert
+from mule_triage.contracts import Alert, NarrativeOutcome
 from mule_triage.evidence import (
     EvidencePack,
     JsonObject,
@@ -22,7 +22,7 @@ from mule_triage.evidence import (
     facts_sha256,
     utc_iso,
 )
-from mule_triage.decision.review import CaseView
+from mule_triage.decision.review import CaseView, StoredNarrative
 
 
 def inline_code(text: str) -> str:
@@ -125,12 +125,39 @@ def case_markdown(view: CaseView) -> str:
             "Warning: with these rules the pack below differs from the stored case;"
             " use the run's rules file before disposing."
         )
-    lines += ["", pack_markdown(view.pack, case.version), "## Audit history", ""]
+    lines += ["", pack_markdown(view.pack, case.version)]
+    lines += narrative_markdown(view.narrative)
+    lines += ["## Audit history", ""]
     lines += [
         f"- {utc_iso(event.occurred_at)} {event.event_type}: {inline_code(event.payload)}"
         for event in view.history
     ]
     return "\n".join(lines) + "\n"
+
+
+def narrative_markdown(narrative: StoredNarrative | None) -> list[str]:
+    """Every text from the narrative event is inline code: a draft's sentences are the
+    model's words, which the validator checks for facts, not for Markdown."""
+    lines = ["## Narrative", ""]
+    if narrative is None:
+        return [*lines, "- There's no narrative for this version.", ""]
+    if narrative.outcome is NarrativeOutcome.AI_DRAFT:
+        lines.append(
+            f"- Source: an AI draft ({narrative.source}), from model"
+            f" {inline_code(narrative.model or 'unknown')}, digest"
+            f" {inline_code(narrative.digest or 'unknown')}"
+        )
+    else:
+        lines.append(f"- Source: the template ({narrative.outcome})")
+        lines.append(f"- Note: {inline_code(narrative.note or 'none')}")
+        lines += [f"- Reason: {inline_code(reason)}" for reason in narrative.reasons]
+    lines += ["", "Sentences, each with the facts it cites:", ""]
+    lines += [
+        f"- {inline_code(sentence.text)}, citing"
+        f" {', '.join(inline_code(fact_id) for fact_id in sentence.fact_ids)}"
+        for sentence in narrative.sentences
+    ]
+    return [*lines, ""]
 
 
 def pack_document(pack: EvidencePack, version: int) -> JsonObject:

@@ -167,3 +167,17 @@ The reasons for each decision are mine to add.
 Found while fixing, and fixed: the stub server's half-second shutdown poll made the client tests take about 4.5 seconds; they now take under one.
 
 The reasons for each decision are mine to add.
+
+### R review, first pass (by Claude Opus 5.5, in a separate chat)
+
+Run with `/adversarial-review`. Claude Opus 5.5 is the builder's own model family, so this pass
+doesn't meet R's check: R still needs a review by a different family. The building agent checked
+R1 against the code before fixing it: a golden replay, then `show ACC-105`, printed no note and no
+sentence, and the NARRATIVE payload held `"reply":null`.
+
+| ID | Finding | Decision | Fix |
+| --- | --- | --- | --- |
+| R1 (high) | The reviewer never reads a narrative. The template's note and sentences, and an accepted draft's normalised sentences, were built but never stored or shown; the NARRATIVE event kept only the raw reply, against `validator.normalised`'s docstring; the packs and `show` had no narrative section; so `intent.md`'s "checked first-draft narrative" wasn't backed | Agreed. Fix storing and showing it, within R's budget, so no `PLAN.md` change | The NARRATIVE payload also holds `note` and `sentences`: an accepted draft's normalised text, or the template's. No schema change, and nothing new in the facts hash, so the recordings still match. `show` has a `## Narrative` section from the latest NARRATIVE event at the case's current version, naming its source (model and digest, or the template's note and reasons), with all its text as inline code; with no event at that version it says so. Five tests failed first; a sixth, added at self-review, shows an event written before this fix gives no narrative rather than an error |
+| R1, open part | The pack files under `--out` have no narrative, and on a re-run an unchanged case would need it read from its stored event | Open: out of R's scope | None |
+| R1, open part | `intent.md` claims every alert has a checked first-draft narrative | Open: reworded at M8 | None |
+| R1, open part | `dispose` accepts `--narrative ACCEPTED` or `EDITED` when the case's current version has no AI draft, and doesn't record which NARRATIVE event the reviewer saw | Deferred: it should refuse those two values in that case, and record the event | None |

@@ -10,9 +10,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TypeAlias
 
+from pydantic import BaseModel, ConfigDict, ValidationError
+
 from mule_triage.decision.audit import AuditEvent, AuditLog, EventType, payload_json
 from mule_triage.clock import Clock
-from mule_triage.contracts import AccountId, Alert, RulesConfig
+from mule_triage.contracts import AccountId, Alert, NarrativeOutcome, RulesConfig
 from mule_triage.evidence import EvidencePack, build_pack, facts_sha256
 from mule_triage.detection.signals import activities
 from mule_triage.records.store import SqliteStore, StoredCase
@@ -107,11 +109,56 @@ def dispose(
     return Stale(account, as_of, disposition.seen_version, current.version)
 
 
+class StoredSentence(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
+
+    text: str
+    fact_ids: tuple[str, ...]
+
+
+class StoredNarrative(BaseModel):
+    """The part of a NARRATIVE event's payload that a reviewer reads."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
+
+    version: int
+    outcome: NarrativeOutcome
+    source: str | None
+    model: str | None
+    digest: str | None
+    note: str | None
+    reasons: tuple[str, ...]
+    sentences: tuple[StoredSentence, ...]
+
+
+def stored_narrative(event: AuditEvent) -> StoredNarrative | None:
+    """None for an event written before NARRATIVE payloads held their sentences."""
+    try:
+        return StoredNarrative.model_validate_json(event.payload)
+    except ValidationError:
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class CaseView:
     case: StoredCase
     pack: EvidencePack
     history: tuple[AuditEvent, ...]
+
+    @property
+    def narrative(self) -> StoredNarrative | None:
+        """The latest narrative of the case's current version; never an older version's."""
+        found = [
+            stored_narrative(event)
+            for event in self.history
+            if event.event_type is EventType.NARRATIVE
+        ]
+        current = [
+            each
+            for each in found
+            if each is not None and each.version == self.case.version
+        ]
+        return current[-1] if current else None
 
     @property
     def matches_case(self) -> bool:

@@ -1,8 +1,9 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from mule_triage.decision.audit import AuditLog, EventType
+from mule_triage.decision.audit import AuditEvent, AuditLog, EventType, payload_json
 from mule_triage.clock import FixedClock
 from mule_triage.contracts import AccountId, RulesConfig
 from mule_triage.pipeline import Settings, run
@@ -212,6 +213,41 @@ def test_a_case_view_shows_the_stored_case_and_its_rebuilt_pack(
     assert view.case.version == 1
     assert view.matches_case
     assert view.pack.counterparties.note == "5 of 9 shown; 4 left out"
+
+
+def test_a_narrative_event_written_without_its_sentences_gives_no_narrative(
+    tmp_path: Path, rules: RulesConfig
+) -> None:
+    database = tmp_path / "triage.db"
+    run_golden(database, rules)
+    with open_store(database) as store:
+        view = case_view(store, ACC_101, AS_OF, rules)
+    assert view is not None
+    older = AuditEvent(
+        EventType.NARRATIVE,
+        ACC_101,
+        AS_OF,
+        RUN_AT,
+        payload_json(
+            {
+                "run_id": 1,
+                "version": 1,
+                "outcome": "NO_RECORDING",
+                "source": None,
+                "model": None,
+                "digest": None,
+                "prompt_version": "narrative-v1",
+                "facts_sha256": view.case.facts_sha256,
+                "reply": None,
+                "verdict": None,
+                "reasons": ["NO_RECORDING: no recording"],
+            }
+        ),
+    )
+
+    narrative = replace(view, history=(older,)).narrative
+
+    assert narrative is None
 
 
 def test_a_case_view_with_other_outcome_rules_doesnt_match_the_case(

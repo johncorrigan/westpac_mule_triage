@@ -254,6 +254,8 @@ def narrative_event(
     at: datetime,
     run_id: RunId,
 ) -> AuditEvent:
+    """The sentences are what the reviewer reads: an accepted draft's normalised text, or
+    the template's."""
     label, narrative, verdict = record.label, record.narrative, record.verdict
     return AuditEvent(
         EventType.NARRATIVE,
@@ -281,6 +283,13 @@ def narrative_event(
                     if isinstance(narrative, TemplateNarrative)
                     else []
                 ),
+                "note": (
+                    narrative.note if isinstance(narrative, TemplateNarrative) else None
+                ),
+                "sentences": [
+                    {"text": sentence.text, "fact_ids": list(sentence.fact_ids)}
+                    for sentence in narrative.sentences
+                ],
             }
         ),
     )

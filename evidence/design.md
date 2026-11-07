@@ -132,9 +132,17 @@ replies are recorded again.
 
 Each narrative is a `NARRATIVE` audit event: the outcome, live or replay, the model and its
 digest, the prompt version, the facts hash, the raw reply, the verdict and the template's
-reasons. The raw reply can hold personal data, as the packs can. Not covered: a crash between
-the run's commit and the narrative events leaves those cases without a narrative, and a re-run
-that changes no case drafts none.
+reasons. At R it also holds what the reviewer reads: the template's note, and the sentences
+with their fact IDs, which are an accepted draft's normalised text, never the raw reply, or the
+template's. None of it is in the facts hash. `show` prints them in a `## Narrative` section,
+from the latest event at the case's current version, naming the model and digest or the
+template's note and reasons, with every text as inline code; a case with no event at its
+current version, such as one just disposed of, shows "no narrative for this version"
+(`tests/integration/test_review_commands.py`). The raw reply and the sentences can hold
+personal data, as the packs can. Not covered: the pack files under `--out` have no narrative;
+`dispose` takes `--narrative ACCEPTED` even when there was no AI draft, and doesn't record which
+narrative the reviewer saw; a crash between the run's commit and the narrative events leaves
+those cases without a narrative; and a re-run that changes no case drafts none.
 
 ## Data flow
 
@@ -159,8 +167,8 @@ that changes no case drafts none.
   and durations only, and a test runs the golden day and finds no account ID, transaction ID
   or the injected reference in them. The run summary names each flagged account, with codes and
   counts; the audit payloads hold IDs, codes, hashes and the model's raw reply, which can hold
-  personal data (see the AI boundary). `show` prints a whole pack, references included, so like
-  the pack files its output can hold personal data.
+  personal data (see the AI boundary). `show` prints a whole pack, references included, and the
+  narrative's sentences, so like the pack files its output can hold personal data.
 
 ## Likely production shape
 

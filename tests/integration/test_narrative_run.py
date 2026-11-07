@@ -28,6 +28,7 @@ from mule_triage.narrative.client import (
     write_recording,
 )
 from mule_triage.narrative.prompt import PROMPT_VERSION, Prompt
+from mule_triage.narrative.template import NO_AI_DRAFT, template_sentences
 from mule_triage.pipeline import Settings, run
 from mule_triage.records.store import open_store
 
@@ -171,7 +172,29 @@ def test_the_audit_records_a_draft_with_its_model_prompt_facts_reply_and_verdict
         "reply": REPLY,
         "verdict": "ACCEPTED",
         "reasons": [],
+        "note": None,
+        "sentences": [
+            {
+                "text": "ACC-101 was paid by 7 distinct senders, at least 5 needed.",
+                "fact_ids": ["S-FAN_IN"],
+            }
+        ],
     }
+
+
+def test_the_audit_records_the_templates_note_and_sentences_when_there_is_no_draft(
+    tmp_path: Path, rules: RulesConfig, acc_101: EvidencePack
+) -> None:
+    database = tmp_path / "triage.db"
+
+    replay_run(database, tmp_path / "none", rules)
+
+    event = narrative_events(database)["ACC-101"]
+    assert event["note"] == NO_AI_DRAFT
+    assert event["sentences"] == [
+        {"text": sentence.text, "fact_ids": list(sentence.fact_ids)}
+        for sentence in template_sentences(acc_101)
+    ]
 
 
 def test_a_missing_recording_falls_back_to_the_template_and_is_counted(
