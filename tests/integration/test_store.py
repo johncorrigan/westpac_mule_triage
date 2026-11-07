@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from mule_triage.errors import StoreError
-from mule_triage.ingest import parse_payments, parse_profiles
-from mule_triage.store import SCHEMA_VERSION, open_store
+from mule_triage.records.ingest import parse_payments, parse_profiles
+from mule_triage.records.store import SCHEMA_VERSION, open_store
 
 PAYMENT = {
     "transaction_id": "TX-101-02",

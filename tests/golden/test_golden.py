@@ -20,7 +20,7 @@ from mule_triage.contracts import (
     RunResult,
 )
 from mule_triage.pipeline import Settings, record_run, run
-from mule_triage.store import FileTally, RunTally, open_store
+from mule_triage.records.store import FileTally, RunTally, open_store
 
 GOLDEN = Path(__file__).resolve().parent
 RULES = GOLDEN.parents[1] / "rules" / "rules-v1.toml"

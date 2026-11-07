@@ -10,12 +10,12 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TypeAlias
 
-from mule_triage.audit import AuditEvent, AuditLog, EventType, payload_json
+from mule_triage.decision.audit import AuditEvent, AuditLog, EventType, payload_json
 from mule_triage.clock import Clock
 from mule_triage.contracts import AccountId, Alert, RulesConfig
 from mule_triage.evidence import EvidencePack, build_pack, facts_sha256
-from mule_triage.signals import activities
-from mule_triage.store import SqliteStore, StoredCase
+from mule_triage.detection.signals import activities
+from mule_triage.records.store import SqliteStore, StoredCase
 
 
 class DispositionReason(StrEnum):

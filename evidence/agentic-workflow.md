@@ -99,7 +99,7 @@ The reasons for each decision are mine to add.
 | R2 | The facts hash covered labels and rounded values, so rewording a label would raise every case's version, stale every disposition and, at M6, break every recording | Fix | The hash covers exact values and codes only; two tests failed first |
 | R3 | References are copied in full, and free text may hold a name | Keep in full, as quoted data | The risk is noted in `design.md` |
 | R4 | Rounding a ratio down misleads when the threshold has more than two decimal places | Open | None |
-| R5 | The threshold wording in `evidence.py` is separate from the comparisons in `signals.py`, and no test ties them together | Open | None |
+| R5 | The threshold wording in `evidence.py` is separate from the comparisons in `detection/signals.py`, and no test ties them together | Open | None |
 | R6 | Pack file names collide for account IDs that differ only in case (macOS, Windows), `:` is invalid on Windows, and as-of times within one second share a name | Open | None |
 | R7 | Packs are written after the commit: a failed write exits 2 without saying the run was stored, and two concurrent runs can leave a file behind the database | Open | None |
 | R8 | Refusing an old database switches it to WAL first | Open | None |

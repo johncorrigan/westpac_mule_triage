@@ -20,7 +20,7 @@ from mule_triage.contracts import (
     RulesConfig,
     Unknown,
 )
-from mule_triage.signals import SIGNALS, Assessment
+from mule_triage.detection.signals import SIGNALS, Assessment
 
 
 def unreachable_settings(rules: RulesConfig) -> tuple[str, ...]:

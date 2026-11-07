@@ -7,14 +7,11 @@ LAYERS = {
     "contracts": 1,
     "errors": 1,
     "clock": 1,
-    "ingest": 2,
-    "store": 2,
-    "signals": 3,
-    "rules": 3,
+    "records": 2,
+    "detection": 3,
     "evidence": 4,
     "narrative": 4,
-    "review": 5,
-    "audit": 5,
+    "decision": 5,
     "report": 6,
     "generate": 6,
     "pipeline": 6,
@@ -80,9 +77,9 @@ def test_every_module_is_mapped_and_imports_only_its_layer_or_below(
 @pytest.mark.parametrize(
     ("module", "snippet"),
     [
-        ("mule_triage.store", "from mule_triage.cli import main"),
-        ("mule_triage.contracts", "import mule_triage.signals"),
-        ("mule_triage.ingest", "from mule_triage import review"),
+        ("mule_triage.records.store", "from mule_triage.cli import main"),
+        ("mule_triage.contracts", "import mule_triage.detection.signals"),
+        ("mule_triage.records.ingest", "from mule_triage import decision"),
         ("mule_triage.helpers", ""),
     ],
     ids=["from-import above", "import above", "package import above", "unmapped"],
@@ -99,9 +96,9 @@ def test_flags_an_import_from_a_higher_layer_or_an_unmapped_module(
 
 def test_allows_an_import_from_the_same_layer_or_below() -> None:
     tree = ast.parse(
-        "from mule_triage.store import save\nfrom mule_triage.contracts import Payment"
+        "from mule_triage.records.store import save\nfrom mule_triage.contracts import Payment"
     )
 
-    violations = layer_violations("mule_triage.ingest", tree)
+    violations = layer_violations("mule_triage.records.ingest", tree)
 
     assert violations == []

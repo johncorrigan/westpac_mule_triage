@@ -6,8 +6,8 @@ import pytest
 from mule_triage.cli import load_rules
 from mule_triage.contracts import AccountId, RulesConfig
 from mule_triage.evidence import EvidencePack, build_pack
-from mule_triage.ingest import parse_payments, parse_profiles, read_lines
-from mule_triage.signals import activities
+from mule_triage.records.ingest import parse_payments, parse_profiles, read_lines
+from mule_triage.detection.signals import activities
 
 ROOT = Path(__file__).resolve().parents[1]
 RULES_V1 = ROOT / "rules" / "rules-v1.toml"

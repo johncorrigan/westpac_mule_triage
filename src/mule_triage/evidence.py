@@ -30,8 +30,8 @@ from mule_triage.contracts import (
     SignalValue,
     Unknown,
 )
-from mule_triage.rules import outcome_for
-from mule_triage.signals import (
+from mule_triage.detection.rules import outcome_for
+from mule_triage.detection.signals import (
     Activity,
     PassThrough,
     account_age_days,

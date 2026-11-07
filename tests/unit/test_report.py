@@ -12,7 +12,7 @@ from mule_triage.contracts import (
 )
 from mule_triage.evidence import EvidencePack, build_pack
 from mule_triage.report import inline_code, pack_json, pack_markdown, write_reports
-from mule_triage.signals import activities
+from mule_triage.detection.signals import activities
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 NINE = datetime(2026, 11, 2, 9, tzinfo=UTC)

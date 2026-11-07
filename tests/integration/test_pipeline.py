@@ -18,9 +18,9 @@ from mule_triage.contracts import (
     RulesConfig,
 )
 from mule_triage.errors import ReconciliationError
-from mule_triage.ingest import ParsedFile
+from mule_triage.records.ingest import ParsedFile
 from mule_triage.pipeline import Settings, record_run, run
-from mule_triage.store import (
+from mule_triage.records.store import (
     CaseChange,
     CaseSnapshot,
     CaseVersion,

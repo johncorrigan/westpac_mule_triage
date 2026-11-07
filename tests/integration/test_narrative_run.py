@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from mule_triage.audit import AuditLog, EventType
+from mule_triage.decision.audit import AuditLog, EventType
 from mule_triage.cli import ExitCode, main
 from mule_triage.clock import FixedClock
 from mule_triage.contracts import (
@@ -24,7 +24,7 @@ from mule_triage.narrative.client import (
 )
 from mule_triage.narrative.prompt import PROMPT_VERSION
 from mule_triage.pipeline import Settings, run
-from mule_triage.store import open_store
+from mule_triage.records.store import open_store
 
 GOLDEN = Path(__file__).resolve().parents[1] / "golden"
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)

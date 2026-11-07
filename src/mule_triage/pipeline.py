@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from mule_triage.audit import AuditEvent, AuditLog, EventType, payload_json
+from mule_triage.decision.audit import AuditEvent, AuditLog, EventType, payload_json
 from mule_triage.clock import Clock
 from mule_triage.contracts import (
     AccountProfile,
@@ -22,14 +22,19 @@ from mule_triage.contracts import (
 )
 from mule_triage.errors import ReconciliationError
 from mule_triage.evidence import EvidencePack, build_pack, facts_sha256
-from mule_triage.ingest import ParsedFile, parse_payments, parse_profiles, read_lines
+from mule_triage.records.ingest import (
+    ParsedFile,
+    parse_payments,
+    parse_profiles,
+    read_lines,
+)
 from mule_triage.narrative.client import ModelClient, OffClient
 from mule_triage.narrative.narrator import NarrativeRecord, narrate
 from mule_triage.narrative.template import TemplateNarrative
 from mule_triage.narrative.validator import Accepted
 from mule_triage.report import write_reports
-from mule_triage.signals import activities
-from mule_triage.store import (
+from mule_triage.detection.signals import activities
+from mule_triage.records.store import (
     CaseChange,
     CaseSnapshot,
     CaseVersion,

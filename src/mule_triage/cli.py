@@ -40,7 +40,7 @@ from mule_triage.narrative.client import (
 )
 from mule_triage.pipeline import Settings
 from mule_triage.report import case_markdown
-from mule_triage.review import (
+from mule_triage.decision.review import (
     CaseNotFound,
     Disposed,
     Disposition,
@@ -50,8 +50,8 @@ from mule_triage.review import (
     case_view,
     dispose,
 )
-from mule_triage.rules import unreachable_settings
-from mule_triage.store import open_store
+from mule_triage.detection.rules import unreachable_settings
+from mule_triage.records.store import open_store
 
 DEFAULT_RULES = Path("rules/rules-v1.toml")
 DEFAULT_DATABASE = Path("out/mule_triage.db")

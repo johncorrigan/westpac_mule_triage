@@ -11,17 +11,22 @@ their own.
 
 ```mermaid
 flowchart TD
-    L6["6: report, generate, pipeline, cli"] --> L5["5: review, audit"]
-    L5 --> L4["4: evidence, narrative"]
-    L4 --> L3["3: signals, rules"]
-    L3 --> L2["2: ingest, store"]
+    L6["6: report, generate, pipeline, cli"] --> L5["5: decision/ (review, audit)"]
+    L5 --> L4["4: evidence, narrative/"]
+    L4 --> L3["3: detection/ (signals, rules)"]
+    L3 --> L2["2: records/ (ingest, store)"]
     L2 --> L1["1: contracts, errors, clock"]
 ```
 
 At M5b every module but `narrative.py` (M6) and `generate.py` (G) exists. At M6 the narrative
 became a sub-package, `narrative/`, whose modules all sit in layer 4: `prompt.py`,
-`validator.py`, `template.py` and `narrator.py` are pure, and `client.py` is an edge. The core
-is pure:
+`validator.py`, `template.py` and `narrator.py` are pure, and `client.py` is an edge. At S, with
+no logic change, `ingest` and `store` moved into `records/`, `signals` and `rules` into
+`detection/`, and `review` and `audit` into `decision/`. Each sub-package holds one layer, so the
+layer map names the sub-package, and a test planting an import from `decision` in
+`detection/signals.py` turns it red. `contracts`, `errors` and `clock` stay at the top because
+every layer imports them, `evidence` stays beside `narrative/`, and so do `report`, `pipeline`
+and `cli`. The core is pure:
 `signals`, `rules` and `evidence` compute from records they're given. The edges are the store,
 the audit log, the report files and the command line. `cli.py` is the composition root: it builds
 the real implementations, including the wall clock, and passes them in, and it's the only module
@@ -50,8 +55,9 @@ exception alone, so any other error turns them red.
 
 ## Store and reconciliation
 
-Written at M3. `store.py` (layer 2) keeps payments, profiles, rejections, duplicates and a run
-ledger in one SQLite file in WAL mode; `ingest.py` only parses, and a record already stored is
+Written at M3. `records/store.py` (layer 2) keeps payments, profiles, rejections, duplicates and
+a run ledger in one SQLite file in WAL mode; `records/ingest.py` only parses, and a record already
+stored is
 recorded as a duplicate if it's identical and rejected if it differs, so a re-run adds nothing.
 Before committing, `pipeline.reconcile` checks per file that the lines read, as recorded in the
 ledger, equal the run's stored accepted, rejected and duplicate rows, and otherwise raises
@@ -60,8 +66,8 @@ ledger, equal the run's stored accepted, rejected and duplicate rows, and otherw
 ## Evidence pack
 
 Written at M5a. `evidence.build_pack` (layer 4) is a pure function of one account's activity
-and the rules. It takes the outcome from `rules.outcome_for` and the numbers from `signals.py`'s
-own measures, so the pipeline's results come from the packs and can't disagree with them. Every
+and the rules. It takes the outcome from `rules.outcome_for` and the numbers from
+`detection/signals.py`'s own measures, so the pipeline's results come from the packs and can't disagree with them. Every
 fact has an ID taken from its record (`P-TX-101-01`, `PR-ACC-101`, `S-FAN_IN`), a source, a record
 ID, and an event time and a knowledge time in UTC. A signal's source is `rules v1`, and its times
 are the as-of time. A ratio is rounded down and hours are rounded up, so a value just short of a
@@ -81,7 +87,7 @@ with a message rather than failing on a missing column.
 
 ## Audit and dispositions
 
-Written at M5b. `audit.py` keeps one table, `audit_events`, for every audited event: its type,
+Written at M5b. `decision/audit.py` keeps one table, `audit_events`, for every audited event: its type,
 the case (account and as-of time), the time from the injected clock, and a JSON payload. Triggers
 refuse UPDATE and DELETE, and an INSERT that reuses an event ID, because INSERT OR REPLACE would
 otherwise remove the old row without firing the delete trigger (`tests/integration/test_audit.py`,
@@ -164,9 +170,9 @@ under the bank's model risk process.
 
 | Boundary | What happens there | Who owns it |
 |---|---|---|
-| Signal | each signal is Known, Unknown or Conflict, and each account gets one outcome | the rules: `signals` and `rules`, layer 3 |
+| Signal | each signal is Known, Unknown or Conflict, and each account gets one outcome | the rules: `signals` and `rules` in `detection/`, layer 3 |
 | Investigation | an evidence pack and a draft narrative; the model never sets an outcome or a priority | the investigator, helped by `evidence` and `narrative`, layer 4 |
-| Decision | the investigator's disposition, recorded in an audit table that refuses updates and deletes | the investigator: `review` and `audit`, layer 5 |
+| Decision | the investigator's disposition, recorded in an audit table that refuses updates and deletes | the investigator: `review` and `audit` in `decision/`, layer 5 |
 | Action | freezing, reporting or contacting an account | people and systems outside the tool, which does nothing here |
 
 At M5b every boundary but the narrative (M6) is built.

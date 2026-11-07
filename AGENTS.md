@@ -94,7 +94,7 @@ script can check.
   only after `pyproject.toml` changes.
 - `python scripts/verify.py` is the definition of done. `--fast` runs
   only the quick ones: the format check, lint, the golden checksum and the secrets check.
-- One test file: `python -m pytest tests/unit/test_rules.py -q`.
+- One test file: `python -m pytest tests/unit/detection/test_rules.py`.
 - `.gitattributes` keeps line endings LF on every machine, so file checksums match everywhere.
 
 ## Layout

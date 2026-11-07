@@ -2,11 +2,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from mule_triage.audit import AuditLog, EventType
+from mule_triage.decision.audit import AuditLog, EventType
 from mule_triage.clock import FixedClock
 from mule_triage.contracts import AccountId, RulesConfig
 from mule_triage.pipeline import Settings, run
-from mule_triage.review import (
+from mule_triage.decision.review import (
     CaseNotFound,
     Disposed,
     Disposition,
@@ -16,7 +16,7 @@ from mule_triage.review import (
     case_view,
     dispose,
 )
-from mule_triage.store import CaseStatus, open_store
+from mule_triage.records.store import CaseStatus, open_store
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 RUN_AT = datetime(2026, 11, 8, 3, 0, tzinfo=UTC)

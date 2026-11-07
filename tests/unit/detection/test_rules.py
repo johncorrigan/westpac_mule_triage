@@ -14,8 +14,8 @@ from mule_triage.contracts import (
     SignalValue,
     Unknown,
 )
-from mule_triage.rules import outcome_for
-from mule_triage.signals import Assessment
+from mule_triage.detection.rules import outcome_for
+from mule_triage.detection.signals import Assessment
 
 ACCOUNT = AccountId("ACC-101")
 FAN_IN = ReasonCode.FAN_IN

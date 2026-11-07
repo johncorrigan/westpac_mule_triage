@@ -20,7 +20,7 @@ from mule_triage.evidence import (
     facts_json,
     facts_sha256,
 )
-from mule_triage.signals import activities
+from mule_triage.detection.signals import activities
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 NINE = datetime(2026, 11, 2, 9, tzinfo=UTC)

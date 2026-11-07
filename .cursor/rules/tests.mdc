@@ -8,7 +8,7 @@ alwaysApply: false
 
 ## Layout
 
-- `tests/unit/` mirrors the package: `src/<package>/rules.py` is tested by
+- `tests/unit/` mirrors the package: `src/<package>/detection/rules.py` is tested by
   `tests/unit/test_rules.py`, and a sub-package gets a sub-folder.
 - The other folders hold the other kinds of test: `integration/`, `golden/`, `architecture/` and
   `e2e/`, plus any the project adds.

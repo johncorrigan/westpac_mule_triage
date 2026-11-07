@@ -15,7 +15,7 @@ from mule_triage.contracts import (
     TransactionId,
     Unknown,
 )
-from mule_triage.signals import (
+from mule_triage.detection.signals import (
     Activity,
     PassThrough,
     Signal,

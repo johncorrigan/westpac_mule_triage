@@ -29,7 +29,7 @@ Each entry gives the decision, why, and what it costs. Written at the milestone 
   signals, so a typo stops the run (exit code 2) rather than falling back to a default or never
   alerting (`tests/unit/test_cli.py`). Missing data is a value, not a zero: ACC-105 has no
   profile and would alert if it were new, so it goes to a person instead of being cleared, and an
-  Unknown never lowers an alert's priority (the golden test, `tests/unit/test_rules.py`).
+  Unknown never lowers an alert's priority (the golden test, `tests/unit/detection/test_rules.py`).
 - **Cost:** rules this simple can be gamed. ACC-102 stays one sender and 0.05 of a ratio under the
   thresholds and isn't flagged, by design of the scenario. NEEDS_REVIEW adds work for
   investigators, one case per account without a profile that has one breach. Thresholds are

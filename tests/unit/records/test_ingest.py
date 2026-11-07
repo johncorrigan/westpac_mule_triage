@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from mule_triage.ingest import Rejection, parse_payments, parse_profiles
+from mule_triage.records.ingest import Rejection, parse_payments, parse_profiles
 
 PAYMENT = {
     "transaction_id": "TX-101-02",

@@ -26,7 +26,7 @@ from mule_triage.contracts import (
     RulesConfig,
 )
 from mule_triage.errors import StoreError
-from mule_triage.ingest import ParsedFile, Rejection
+from mule_triage.records.ingest import ParsedFile, Rejection
 
 RunId = NewType("RunId", int)
 StoredValue: TypeAlias = str | int

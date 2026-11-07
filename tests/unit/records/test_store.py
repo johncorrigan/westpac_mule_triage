@@ -4,8 +4,14 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from mule_triage.contracts import MAX_AMOUNT_CENTS, RulesConfig
-from mule_triage.ingest import Rejection, parse_payments, parse_profiles
-from mule_triage.store import FileTally, RunId, SqliteStore, open_store, utc_text
+from mule_triage.records.ingest import Rejection, parse_payments, parse_profiles
+from mule_triage.records.store import (
+    FileTally,
+    RunId,
+    SqliteStore,
+    open_store,
+    utc_text,
+)
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 PAYMENT = {

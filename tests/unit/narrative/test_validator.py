@@ -9,7 +9,7 @@ from mule_triage.contracts import AccountId, Payment, RulesConfig, TransactionId
 from mule_triage.evidence import EvidencePack, build_pack
 from mule_triage.narrative.prompt import MAX_SENTENCE_CHARACTERS, MAX_SENTENCES
 from mule_triage.narrative.validator import Accepted, Reason, Rejected, validate
-from mule_triage.signals import activities
+from mule_triage.detection.signals import activities
 
 DraftSentence = tuple[str, list[str]]
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)

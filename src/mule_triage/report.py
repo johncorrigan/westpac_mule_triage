@@ -22,7 +22,7 @@ from mule_triage.evidence import (
     facts_sha256,
     utc_iso,
 )
-from mule_triage.review import CaseView
+from mule_triage.decision.review import CaseView
 
 
 def inline_code(text: str) -> str:

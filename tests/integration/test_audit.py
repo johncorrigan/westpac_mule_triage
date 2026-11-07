@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from mule_triage.audit import AuditEvent, AuditLog, EventType, payload_json
+from mule_triage.decision.audit import AuditEvent, AuditLog, EventType, payload_json
 from mule_triage.contracts import AccountId
-from mule_triage.store import open_store
+from mule_triage.records.store import open_store
 
 AS_OF = datetime(2026, 11, 3, tzinfo=UTC)
 AT = datetime(2026, 11, 8, 3, 30, tzinfo=UTC)

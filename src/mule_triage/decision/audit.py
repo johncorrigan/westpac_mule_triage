@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from mule_triage.contracts import AccountId
-from mule_triage.store import utc_text
+from mule_triage.records.store import utc_text
 
 DDL = (
     "CREATE TABLE IF NOT EXISTS audit_events ("
