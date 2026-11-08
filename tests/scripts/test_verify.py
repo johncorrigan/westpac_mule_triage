@@ -318,3 +318,74 @@ def test_flags_a_dot_env_file_that_git_would_track(
     findings = verify.secrets_in(tmp_path, ".env")
 
     assert findings == [".env: a .env file isn't ignored"]
+
+
+def write_tree(root: Path, names: list[str]) -> None:
+    for name in names:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("nothing secret\n", encoding="utf-8")
+
+
+def test_lists_every_file_the_gitignore_doesnt_ignore_without_git(
+    verify: ModuleType, tmp_path: Path
+) -> None:
+    (tmp_path / ".gitignore").write_text(
+        ".venv/\n*.py[cod]\n.env\n.env.*\n!.env.example\n/build/\n", encoding="utf-8"
+    )
+    write_tree(
+        tmp_path,
+        [
+            "README.md",
+            "src/app.py",
+            "src/app.pyc",
+            ".venv/lib/site.py",
+            ".env",
+            ".env.local",
+            ".env.example",
+            "build/out.txt",
+            "docs/build/kept.txt",
+            ".git/config",
+        ],
+    )
+
+    files = verify.walked_files(tmp_path)
+
+    assert sorted(files) == [
+        ".env.example",
+        ".gitignore",
+        "README.md",
+        "docs/build/kept.txt",
+        "src/app.py",
+    ]
+
+
+def test_the_secrets_gate_scans_a_folder_that_isnt_a_git_checkout(
+    verify: ModuleType, tmp_path: Path
+) -> None:
+    (tmp_path / ".gitignore").write_text(".venv/\n", encoding="utf-8")
+    write_tree(tmp_path, ["README.md", ".venv/lib/site.py"])
+    (tmp_path / "config.txt").write_text(
+        f'{KEY} = "hunter2hunter2"\n', encoding="utf-8"
+    )
+    (tmp_path / ".venv" / "lib" / "site.py").write_text(
+        f'{KEY} = "hunter2hunter2"\n', encoding="utf-8"
+    )
+
+    outcome = verify.check_secrets(tmp_path)
+
+    assert outcome.status == verify.Status.FAIL
+    assert outcome.detail == "config.txt:1: looks like a hard-coded credential"
+
+
+def test_the_secrets_gate_passes_a_clean_folder_that_isnt_a_git_checkout(
+    verify: ModuleType, tmp_path: Path
+) -> None:
+    write_tree(tmp_path, ["README.md", "src/app.py"])
+
+    outcome = verify.check_secrets(tmp_path)
+
+    assert outcome.status == verify.Status.PASS
+    assert (
+        outcome.detail == "2 files checked (no Git checkout: .gitignore read directly)"
+    )

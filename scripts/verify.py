@@ -16,6 +16,7 @@ if sys.version_info < (3, 11):
     )
 
 import argparse
+import fnmatch
 import hashlib
 import importlib.util
 import json
@@ -47,6 +48,8 @@ SMOKE_SUMMARY = "run_summary.json"
 SMOKE_COUNTS = ("received", "accepted", "rejected", "duplicates")
 MANIFEST_LINE = re.compile(r"([0-9a-fA-F]{64}) [ *](.+)")
 REQUIREMENT_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+GITIGNORE = ".gitignore"
+NEVER_WALKED = frozenset({".git"})
 ENV_FILE = re.compile(r"(^|/)\.env(\.[^/]+)?$", re.IGNORECASE)
 ENV_TEMPLATE = re.compile(r"(^|/)\.env\.example$", re.IGNORECASE)
 SECRET_PATTERNS = (
@@ -82,6 +85,14 @@ class Gate:
     name: str
     fast: bool
     run: Callable[[], Outcome]
+
+
+@dataclass(frozen=True, slots=True)
+class IgnoreRule:
+    pattern: str
+    negated: bool
+    directory_only: bool
+    anchored: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,7 +329,7 @@ def check_golden(expected: Path) -> Outcome:
     return Outcome(Status.PASS, f"{len(listed)} files match {GOLDEN_MANIFEST}")
 
 
-def unignored_files(root: Path) -> list[str] | None:
+def git_listed_files(root: Path) -> list[str] | None:
     try:
         done = subprocess.run(
             ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
@@ -333,6 +344,58 @@ def unignored_files(root: Path) -> list[str] | None:
         return None
     names = done.stdout.decode("utf-8", errors="replace").split("\0")
     return [name for name in names if name]
+
+
+def ignore_rules(root: Path) -> list[IgnoreRule]:
+    path = root / GITIGNORE
+    if not path.is_file():
+        return []
+    rules: list[IgnoreRule] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        text = line.strip()
+        if not text or text.startswith("#"):
+            continue
+        negated = text.startswith("!")
+        text = text.removeprefix("!")
+        directory_only = text.endswith("/")
+        text = text.rstrip("/")
+        rules.append(IgnoreRule(text.lstrip("/"), negated, directory_only, "/" in text))
+    return rules
+
+
+def is_ignored(relative: str, is_directory: bool, rules: list[IgnoreRule]) -> bool:
+    ignored = False
+    name = relative.rsplit("/", 1)[-1]
+    for rule in rules:
+        if rule.directory_only and not is_directory:
+            continue
+        if fnmatch.fnmatchcase(relative if rule.anchored else name, rule.pattern):
+            ignored = not rule.negated
+    return ignored
+
+
+def walked_files(root: Path) -> list[str]:
+    """What Git would list, for a folder that isn't a Git checkout, such as a ZIP download.
+
+    It reads only the root .gitignore, without nested ones, `**` or global excludes, which
+    this repository doesn't use.
+    """
+    rules = ignore_rules(root)
+    found: list[str] = []
+    for folder, directories, files in os.walk(root):
+        base = Path(folder).relative_to(root)
+        directories[:] = sorted(
+            name
+            for name in directories
+            if name not in NEVER_WALKED
+            and not is_ignored((base / name).as_posix(), True, rules)
+        )
+        found.extend(
+            (base / name).as_posix()
+            for name in sorted(files)
+            if not is_ignored((base / name).as_posix(), False, rules)
+        )
+    return found
 
 
 def secrets_in(root: Path, relative: str) -> list[str]:
@@ -354,13 +417,15 @@ def secrets_in(root: Path, relative: str) -> list[str]:
 
 
 def check_secrets(root: Path) -> Outcome:
-    files = unignored_files(root)
+    files = git_listed_files(root)
+    source = ""
     if files is None:
-        return Outcome(Status.FAIL, "git ls-files failed, so no files were checked")
+        files = walked_files(root)
+        source = " (no Git checkout: .gitignore read directly)"
     findings = [finding for relative in files for finding in secrets_in(root, relative)]
     if findings:
         return Outcome(Status.FAIL, "\n".join(findings))
-    return Outcome(Status.PASS, f"{len(files)} files checked")
+    return Outcome(Status.PASS, f"{len(files)} files checked{source}")
 
 
 GATES = (

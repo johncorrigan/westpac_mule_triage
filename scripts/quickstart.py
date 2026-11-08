@@ -124,6 +124,8 @@ def demo(python: str, folder: Path) -> bool:
     say(f"\nquickstart: evidence packs: {shown(packs)}")
     say(f"quickstart: run summary: {shown(packs / 'run_summary.json')}")
     say(f"quickstart: logs, as JSON lines: {shown(log)}")
+    say("quickstart: to manually activate .venv:")
+    say("  source .venv/bin/activate")
     say("quickstart: to try next, with .venv activated:")
     say(f"  python -m mule_triage show ACC-106 {' '.join(case)}")
     say(

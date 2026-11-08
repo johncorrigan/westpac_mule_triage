@@ -1,6 +1,13 @@
 # Decisions
 
-Each entry gives the decision, why, and what it costs. Written at the milestone that makes it.
+Five records, each with the decision, why, and what it costs, written at the milestone that made
+it:
+
+1. [SQLite over loose files](#sqlite-over-loose-files-m3)
+2. [Rules for detection, and NEEDS_REVIEW instead of a silent clear](#rules-for-detection-and-needs_review-instead-of-a-silent-clear-m4)
+3. [AI drafts, people decide](#ai-drafts-people-decide-m6)
+4. [A strict validator and a template, not trust in the model](#a-strict-validator-and-a-template-not-trust-in-the-model-m6)
+5. [What I didn't build, on purpose](#what-i-didnt-build-on-purpose-m1-to-m8)
 
 ## SQLite over loose files (M3)
 
@@ -52,10 +59,10 @@ Each entry gives the decision, why, and what it costs. Written at the milestone 
 - **Known limits (M6 part 2 self-review):** a narrative is drafted only when a case opens or
   changes, so a model that comes back later doesn't replace a template, and a crash between
   the run's commit and its narrative events leaves those cases without one; nothing caps the
-  reply's length (`num_predict`), so Ollama keeps generating after the client gives up; the
-  completeness test checks only that recordings exist, not that they pass the validator; a
+  reply's length (`num_predict`), so Ollama keeps generating after the client gives up; a
   NO_RECORDING reason names the recordings folder, which can be a local path; and the prompt's
-  size isn't checked against the context.
+  size isn't checked against the context. Since M6 part 3, `tests/golden/test_recordings.py`
+  checks that every golden alert has a recording, and pins the verdict each one gets.
 
 ## A strict validator and a template, not trust in the model (M6)
 
@@ -74,9 +81,34 @@ Each entry gives the decision, why, and what it costs. Written at the milestone 
 - **Cost:** some true sentences fail: a total such as $6,300.00, "09:00" or "2 November 2026",
   a listed word used innocently, such as "closed", and a common phrase that a reference
   happens to hold, such as "this account is" from the golden injection.
-- **Known limits, not checked (M6 self-review):** a synonym of a decision word, such as
-  "genuine" or "safe"; Cyrillic or other look-alike letters, which NFKC doesn't map; a
-  sentence that cites every fact can use any number in the pack; a payment's knowledge time
-  can stand in for its event time; spelled-out numbers; whether a number plays the role the
-  sentence gives it; and any claim without an ID, number or date, such as "moved the money
-  overseas". The reviewer reads the draft beside the pack.
+- **Known limits, not checked (M6 self-review and R):** a synonym of a decision word, such as
+  "genuine" or "safe"; another form of a listed word, such as "freezing" or "escalating", and
+  an accusing word, such as "scam" or "laundering" (R's R3); an account or transaction ID that
+  isn't in the pack, when its digits match a cited number or it has none, such as "from
+  ACC-900" beside a $900.00 payment (R's R2); Cyrillic or other look-alike letters, which NFKC
+  doesn't map; a sentence that cites every fact can use any number in the pack; a payment's
+  knowledge time can stand in for its event time; spelled-out numbers; whether a number plays
+  the role the sentence gives it; and any claim without an ID, number or date, such as "moved
+  the money overseas". R2 and R3 were confirmed in memory at M8. The reviewer reads the draft
+  beside the pack.
+
+## What I didn't build, on purpose (M1 to M8)
+
+- **Decision:** keep the slice to one command-line workflow on one machine. Left out on
+  purpose: CI and CD, a user interface or service, access control for more than one user, and
+  any action on an account. Planned as optional, and not reached: the data generator (G), the
+  threaded concurrency test (T) and a second prompt version (N). Cut: evaluation metrics for the
+  rules and for the narrative. Deferred at R: the narrative in the pack files, and `dispose`
+  refusing an ACCEPTED narrative when there was no AI draft.
+- **Why:** the brief asks for one meaningful workflow, end to end, within three hours. A user
+  interface, a service and access control add surface without proving anything the command line
+  doesn't. Acting on an account is what the tool must never do: a person decides, and other
+  systems act. CI was cut at M1, because `verify.py`, run locally, is the definition of done, and
+  [`verify.md`](verify.md) says where each check would run. The two metrics were cut because the
+  only labelled data is the golden day, written around rules v1, so a score on it would say
+  little. G, T and N were to use only time saved before 2:30; of the optional items, only S,
+  the subpackage move, ran.
+- **Cost:** what CI would catch, Python 3.11, Windows and a clean checkout on every push, hasn't
+  run. Two reviewers on one version are tested only one after the other. The rules and the AI
+  have no measured quality beyond the golden day and a smoke test of two drafts. A reviewer
+  reading a pack file sees no narrative, and must use `show`.

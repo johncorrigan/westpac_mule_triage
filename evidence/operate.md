@@ -1,6 +1,7 @@
 # Operating it
 
-Written at M6 and M7. How to run mule_triage, what it reports, and what to do when it fails.
+How to run mule_triage, how to tell whether a run worked, what it reports, and what to do when
+it fails.
 
 ## Running it
 
@@ -19,6 +20,24 @@ and `--ai` to `replay`. `python3 scripts/quickstart.py` runs the checks, then re
 day into an emptied `out/demo/` and shows ACC-101, so a second quickstart shows the same run:
 the same summary bytes (`tests/scripts/test_quickstart.py`), and by hand, the same output but
 for the audit history's times.
+
+## Status at a glance
+
+A run worked if it exits 0, its `run_finished` log record is at INFO, and its summary shows, for
+each file, received equal to accepted, rejected and duplicates added together. Every command
+ends with one of these exit codes, and `run_finished` names it with its meaning:
+
+| Code | Name | Meaning |
+| --- | --- | --- |
+| 0 | SUCCESS | The run is stored, and every case has its pack |
+| 1 | UNEXPECTED_ERROR | An unexpected error, with a traceback on stderr |
+| 2 | USAGE_ERROR | An argument, input file, rules file or setting is wrong, or a file couldn't be read or written; the message on stderr says which |
+| 3 | RECONCILIATION_FAILED | The stored rows don't account for every line read, so nothing was stored |
+| 4 | DEGRADED | The run is stored, but the model was unavailable (AI_UNAVAILABLE), so those cases' narratives are templates |
+| 5 | STALE_VERSION | The case changed after the reviewer read it, so the disposition wasn't recorded |
+| 6 | DATABASE_UNAVAILABLE | The database was locked or unreadable |
+
+What to do about each is in the failure table at the end.
 
 ## The run summary and the logs
 
@@ -85,7 +104,8 @@ secrets gate checks the repository only.
 
 ## From local to cloud
 
-Not built, and not tested.
+Not built, and not tested. The likely production shape is drawn in [`design.md`](design.md), and
+the delivery pipeline in [`verify.md`](verify.md).
 
 | Here | In the cloud |
 | --- | --- |
